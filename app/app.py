@@ -1,6 +1,15 @@
+import sys
+from pathlib import Path
+
+# Add project root directory to sys.path for module resolution on Streamlit Cloud
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 import streamlit as st
 from PIL import Image
 from src.predict import LeafDiseasePredictor
+
 
 # 1. Page Configuration
 st.set_page_config(
