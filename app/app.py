@@ -267,15 +267,32 @@ with col_right:
                 confidence_val = float(result["confidence"])
                 confidence_pct = confidence_val * 100
 
+                # Analyze top-1 and top-2 probabilities for probability margin / diffusion check
+                all_probs = sorted([float(p) for p in result["all_probabilities"]], reverse=True)
+                top1_prob = all_probs[0] if len(all_probs) > 0 else confidence_val
+                top2_prob = all_probs[1] if len(all_probs) > 1 else 0.0
+                margin = top1_prob - top2_prob
+
+                # Flag prediction as unrecognized foliage if top-1 < 0.50 OR margin < 0.20
+                is_unrecognized = (top1_prob < 0.50) or (margin < 0.20)
+
                 # Format raw label for clean presentation
                 formatted_name = raw_class_name.replace("___", " - ").replace("_", " ")
                 is_healthy = "healthy" in raw_class_name.lower()
 
                 st.success("🔬 **Inference Complete!**")
+                st.caption("ℹ️ **Scope Note:** LeafGuard AI v1 is trained for Apple, Potato, and Tomato leaf conditions.")
                 st.markdown("---")
 
-                # Health Status Card & Uncertainty Labeling
-                if confidence_pct < 70.0:
+                # Health Status Card & Uncertainty Safeguard
+                if is_unrecognized:
+                    st.warning("### Status: ⚠️ Unrecognized Crop or Foliage")
+                    st.markdown(
+                        "**The model cannot confidently match this image to the 17 supported Apple, Potato, or Tomato conditions. "
+                        "Please upload a clear close-up leaf image from a supported crop.**"
+                    )
+                    st.markdown(f"#### Nearest Model Match (Uncertain):\n### **[Uncertain] {formatted_name}**")
+                elif confidence_pct < 70.0:
                     st.warning("### Status: ⚠️ Low-Confidence Prediction")
                     st.markdown(f"#### Estimated Condition:\n### **[Low Confidence] {formatted_name}**")
                 else:
@@ -293,11 +310,17 @@ with col_right:
                 st.metric(label="Model Certainty", value=f"{confidence_pct:.2f}%")
                 st.progress(min(max(confidence_val, 0.0), 1.0))
 
-                # Low Confidence Warning Banner (< 70%)
-                if confidence_pct < 70.0:
+                # Warning Banners by Priority (1. is_unrecognized -> 2. confidence_pct < 70.0 -> 3. normal)
+                if is_unrecognized:
+                    st.warning(
+                        "⚠️ **Unrecognized Crop or Foliage Notice:** "
+                        "The model cannot confidently match this image to the 17 supported Apple, Potato, or Tomato conditions. "
+                        "Please upload a clear close-up leaf image from a supported crop."
+                    )
+                elif confidence_pct < 70.0:
                     st.warning(
                         "⚠️ **Low-Confidence Warning (< 70%):** "
-                        "The model certainty is below 70%. The result is labeled as a low-confidence estimate. "
+                        "The model certainty is below 70%. The result is presented as an estimated prediction. "
                         "The image might have glare, blur, unusual angles, or an unrepresented leaf condition. "
                         "Please consider uploading another clear, well-lit close-up photo for re-evaluation."
                     )
