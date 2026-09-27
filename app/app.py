@@ -6,10 +6,10 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+import numpy as np
 import streamlit as st
 from PIL import Image
 from src.predict import LeafDiseasePredictor
-
 
 # 1. Page Configuration
 st.set_page_config(
@@ -109,7 +109,42 @@ DISEASE_INFO = {
 }
 
 
-# 3. Cached Model Loading Function
+# 3. Image Quality Assessment Function (Resolution, Darkness, Overexposure & Detail)
+def check_image_quality(pil_image):
+    """
+    Evaluates resolution, darkness (via dark_pixel_ratio & p75_brightness), overexposure,
+    and sharpness of uploaded leaf image using PIL and NumPy.
+    Returns (is_valid: bool, warning_message: str or None)
+    """
+    w, h = pil_image.size
+    if w < 100 or h < 100:
+        return False, "The uploaded image resolution is too small (< 100 × 100 px). Please upload a higher resolution crop leaf photo."
+
+    img_np = np.array(pil_image.convert("RGB"), dtype=np.float32)
+    gray = np.mean(img_np, axis=2)
+
+    # 1. Advanced Darkness Check (Dark Pixel Ratio & 75th Percentile Intensity)
+    dark_pixel_ratio = float(np.mean(gray < 40.0))
+    p75_brightness = float(np.percentile(gray, 75))
+
+    if dark_pixel_ratio > 0.65 or p75_brightness < 45.0:
+        return False, "The uploaded image is too dark or underexposed. Please upload a well-lit photo of the crop leaf."
+
+    # 2. Overexposure Check
+    mean_brightness = float(np.mean(img_np))
+    if mean_brightness > 225.0:
+        return False, "The uploaded image is overexposed / too bright. Please upload a photo taken under balanced lighting."
+
+    # 3. Sharpness / detail check via image spatial gradients
+    gy, gx = np.gradient(gray)
+    detail_score = float(np.mean(np.sqrt(gx**2 + gy**2)))
+    if detail_score < 3.5:
+        return False, "The uploaded image appears blurry or lacks fine detail. Please upload a clear, focused close-up of the crop leaf."
+
+    return True, None
+
+
+# 4. Cached Model Loading Function
 @st.cache_resource
 def load_leaf_predictor():
     predictor = LeafDiseasePredictor()
@@ -117,7 +152,7 @@ def load_leaf_predictor():
     return predictor
 
 
-# 4. Sidebar Setup
+# 5. Sidebar Setup
 with st.sidebar:
     st.title("🌱 LeafGuard AI")
     st.caption("Intelligent Agricultural Diagnostics")
@@ -148,7 +183,7 @@ with st.sidebar:
     """)
 
 
-# 5. Main Dashboard Header
+# 6. Main Dashboard Header
 st.title("🌱 LeafGuard AI Diagnostic Dashboard")
 st.subheader("Intelligent Crop Health & Disease Detection System")
 st.write(
@@ -157,7 +192,7 @@ st.write(
 )
 st.divider()
 
-# 6. Two-Column Dashboard Layout
+# 7. Two-Column Dashboard Layout
 col_left, col_right = st.columns([1, 1], gap="large")
 
 # --- LEFT COLUMN: Input & Upload ---
@@ -175,12 +210,21 @@ with col_left:
             image = Image.open(uploaded_file)
             st.image(image, caption="Uploaded Crop Leaf Image", width="stretch")
 
-            # Display image specs
-            st.info(
-                f"📁 **Filename:** `{uploaded_file.name}`  \n"
-                f"📐 **Resolution:** {image.width} × {image.height} px  \n"
-                f"🎨 **Mode:** {image.mode}"
-            )
+            # Run pre-inference image quality check
+            is_quality_ok, quality_msg = check_image_quality(image)
+
+            # Display image specs & quality status
+            if is_quality_ok:
+                st.info(
+                    f"📁 **Filename:** `{uploaded_file.name}`  \n"
+                    f"📐 **Resolution:** {image.width} × {image.height} px  \n"
+                    f"🎨 **Quality Check:** Pass (Balanced Lighting & Detail)"
+                )
+            else:
+                st.warning(
+                    f"📁 **Filename:** `{uploaded_file.name}` ({image.width}×{image.height} px)  \n"
+                    f"⚠️ **Quality Notice:** {quality_msg}"
+                )
 
             st.markdown("---")
             analyze_btn = st.button("🧪 Analyze Leaf", type="primary", width="stretch")
@@ -200,65 +244,78 @@ with col_right:
     elif not analyze_btn:
         st.info("👆 Click **Analyze Leaf** on the left panel to execute model inference.")
     else:
-        with st.spinner("Executing MobileNetV2 deep learning inference..."):
-            try:
-                predictor = load_leaf_predictor()
-                result = predictor.predict(uploaded_file)
-            except Exception as err:
-                st.error(
-                    f"❌ **Prediction Error:** An error occurred while running inference ({err}). "
-                    "Please verify model file `models/leafguard_mobilenetv2.h5` exists."
-                )
-                st.stop()
+        # Check image quality before executing model inference
+        is_quality_ok, quality_msg = check_image_quality(image)
+        if not is_quality_ok:
+            st.warning(
+                f"📷 **Image Quality Check Notice:**\n\n{quality_msg}\n\n"
+                "Please re-upload a clearer, well-lit close-up leaf photo for reliable diagnostics."
+            )
+        else:
+            with st.spinner("Executing MobileNetV2 deep learning inference..."):
+                try:
+                    predictor = load_leaf_predictor()
+                    result = predictor.predict(uploaded_file)
+                except Exception as err:
+                    st.error(
+                        f"❌ **Prediction Error:** An error occurred while running inference ({err}). "
+                        "Please verify model file `models/leafguard_mobilenetv2.h5` exists."
+                    )
+                    st.stop()
 
-            raw_class_name = result["predicted_class_name"]
-            confidence_val = float(result["confidence"])
-            confidence_pct = confidence_val * 100
+                raw_class_name = result["predicted_class_name"]
+                confidence_val = float(result["confidence"])
+                confidence_pct = confidence_val * 100
 
-            # Format raw label for clean presentation
-            formatted_name = raw_class_name.replace("___", " - ").replace("_", " ")
-            is_healthy = "healthy" in raw_class_name.lower()
+                # Format raw label for clean presentation
+                formatted_name = raw_class_name.replace("___", " - ").replace("_", " ")
+                is_healthy = "healthy" in raw_class_name.lower()
 
-            st.success("🔬 **Inference Complete!**")
-            st.markdown("---")
+                st.success("🔬 **Inference Complete!**")
+                st.markdown("---")
 
-            # Health Status Card
-            if is_healthy:
-                st.success("### Status: 🌱 Healthy Crop Tissue")
-            else:
-                st.error("### Status: ⚠️ Crop Disease Detected")
+                # Health Status Card & Uncertainty Labeling
+                if confidence_pct < 70.0:
+                    st.warning("### Status: ⚠️ Low-Confidence Prediction")
+                    st.markdown(f"#### Estimated Condition:\n### **[Low Confidence] {formatted_name}**")
+                else:
+                    if is_healthy:
+                        st.success("### Status: 🌱 Healthy Crop Tissue")
+                    else:
+                        st.error("### Status: ⚠️ Crop Disease Detected")
 
-            st.markdown(f"#### Diagnosed Condition:\n### **{formatted_name}**")
-            st.markdown("---")
+                    st.markdown(f"#### Diagnosed Condition:\n### **{formatted_name}**")
 
-            # Confidence Metric & Visual Progress Bar
-            st.markdown("#### Model Confidence Score")
-            st.metric(label="Model Certainty", value=f"{confidence_pct:.2f}%")
-            st.progress(min(max(confidence_val, 0.0), 1.0))
+                st.markdown("---")
 
-            # Low Confidence Warning (< 70%)
-            if confidence_pct < 70.0:
-                st.warning(
-                    "⚠️ **Low Confidence Warning (< 70%):** "
-                    "The model is uncertain about this prediction. "
-                    "The uploaded image may be blurry, poorly lit, or contain an unrepresented crop condition. "
-                    "Please consider uploading a clearer close-up leaf image."
-                )
+                # Confidence Metric & Visual Progress Bar
+                st.markdown("#### Model Confidence Score")
+                st.metric(label="Model Certainty", value=f"{confidence_pct:.2f}%")
+                st.progress(min(max(confidence_val, 0.0), 1.0))
 
-            st.markdown("---")
+                # Low Confidence Warning Banner (< 70%)
+                if confidence_pct < 70.0:
+                    st.warning(
+                        "⚠️ **Low-Confidence Warning (< 70%):** "
+                        "The model certainty is below 70%. The result is labeled as a low-confidence estimate. "
+                        "The image might have glare, blur, unusual angles, or an unrepresented leaf condition. "
+                        "Please consider uploading another clear, well-lit close-up photo for re-evaluation."
+                    )
 
-            # Structured Disease Information & Advisory Guidance
-            info = DISEASE_INFO.get(raw_class_name, {
-                "description": "No detailed description available.",
-                "symptoms": "N/A",
-                "recommendation": "Consult a local agricultural extension specialist for guidance."
-            })
+                st.markdown("---")
 
-            st.markdown("#### 📖 Condition Overview")
-            st.write(info["description"])
+                # Structured Disease Information & Advisory Guidance
+                info = DISEASE_INFO.get(raw_class_name, {
+                    "description": "No detailed description available.",
+                    "symptoms": "N/A",
+                    "recommendation": "Consult a local agricultural extension specialist for guidance."
+                })
 
-            st.markdown("#### 🔍 Common Symptoms")
-            st.write(info["symptoms"])
+                st.markdown("#### 📖 Condition Overview")
+                st.write(info["description"])
 
-            st.markdown("#### 🛡️ Recommended General Action")
-            st.write(info["recommendation"])
+                st.markdown("#### 🔍 Common Symptoms")
+                st.write(info["symptoms"])
+
+                st.markdown("#### 🛡️ Recommended General Action")
+                st.write(info["recommendation"])
