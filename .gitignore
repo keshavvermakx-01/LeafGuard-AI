@@ -1,0 +1,17 @@
+# Dataset files (large raw image datasets)
+data/
+
+# Virtual environments
+mlvenv/
+.venv/
+venv/
+
+# Python compiled files & bytecode
+__pycache__/
+*.pyc
+
+# OS generated files
+.DS_Store
+
+# Environment & secret files
+.env
