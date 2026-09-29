@@ -23,7 +23,9 @@ from src.config import IMAGE_SIZE
 from src.predict import LeafDiseasePredictor
 from src.preprocessing import preprocess_single_image
 
-
+@st.cache_resource(show_spinner=False)
+def load_leaf_predictor():
+    return LeafDiseasePredictor()
 # ============================================================
 # 1. PAGE CONFIGURATION
 # ============================================================
@@ -34,6 +36,25 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+
+# ============================================================
+# STREAMLIT SESSION STATE
+# ============================================================
+
+# Initialize every state key before any later code reads it.
+# This prevents AttributeError/KeyError on a fresh Streamlit session.
+if "analysis_file_hash" not in st.session_state:
+    st.session_state.analysis_file_hash = None
+
+if "analysis_result" not in st.session_state:
+    st.session_state.analysis_result = None
+
+if "analysis_image_bytes" not in st.session_state:
+    st.session_state.analysis_image_bytes = None
+
+if "gradcam_image" not in st.session_state:
+    st.session_state.gradcam_image = None
 
 
 # ============================================================
@@ -382,19 +403,21 @@ def check_image_quality(pil_image):
 # 4. GRAD-CAM
 # ============================================================
 
-def generate_gradcam_overlay(
+def generate_gradcam_explanation(
     model,
     input_data,
     class_index,
     original_image
 ):
     """
-    Generates Grad-CAM using the confirmed 'out_relu' layer.
+    Enhanced Grad-CAM:
+    - Generates normalized activation heatmap
+    - Creates a colored heatmap image
+    - Creates an overlay
+    - Produces a simple natural-language explanation
     """
 
-    grad_layer = model.get_layer(
-        "out_relu"
-    )
+    grad_layer = model.get_layer("out_relu")
 
     grad_model = tf.keras.models.Model(
         inputs=model.inputs,
@@ -411,10 +434,7 @@ def generate_gradcam_overlay(
             training=False
         )
 
-        class_score = predictions[
-            :,
-            class_index
-        ]
+        class_score = predictions[:, class_index]
 
     grads = tape.gradient(
         class_score,
@@ -451,17 +471,20 @@ def generate_gradcam_overlay(
 
     heatmap = heatmap.numpy()
 
-    # Improve visual contrast
+    # Slight contrast enhancement
     heatmap = np.power(
         np.clip(
             heatmap,
             0.0,
             1.0
         ),
-        0.85
+        0.80
     )
 
-    # Resize original
+    # --------------------------------------------------------
+    # Convert original image
+    # --------------------------------------------------------
+
     original = (
         original_image
         .convert("RGB")
@@ -471,7 +494,10 @@ def generate_gradcam_overlay(
         )
     )
 
-    # Resize heatmap
+    # --------------------------------------------------------
+    # Resize 7x7 heatmap
+    # --------------------------------------------------------
+
     heat_img = Image.fromarray(
         np.uint8(
             heatmap * 255
@@ -488,71 +514,186 @@ def generate_gradcam_overlay(
         ) / 255.0
     )
 
-    # Red/yellow activation overlay
-    heat_rgba = np.zeros(
+    # --------------------------------------------------------
+    # Create blue -> cyan -> yellow -> red heatmap
+    # --------------------------------------------------------
+
+    heat_rgb = np.zeros(
         (
             original.height,
             original.width,
-            4
+            3
         ),
         dtype=np.uint8
     )
 
-    heat_rgba[..., 0] = 255
-
-    heat_rgba[..., 1] = np.uint8(
-        255 * (1.0 - heat_array)
+    # Low activation: blue
+    # Medium: cyan/yellow
+    # High: red
+    r = np.clip(
+        255 * (heat_array * 1.8 - 0.25),
+        0,
+        255
     )
 
-    heat_rgba[..., 2] = 0
-
-    heat_rgba[..., 3] = np.uint8(
-        205 * heat_array
+    g = np.clip(
+        255 * (1.4 - np.abs(heat_array - 0.5) * 2.2),
+        0,
+        255
     )
 
-    overlay = Image.fromarray(
+    b = np.clip(
+        255 * (1.0 - heat_array * 1.8),
+        0,
+        255
+    )
+
+    heat_rgb[..., 0] = np.uint8(r)
+    heat_rgb[..., 1] = np.uint8(g)
+    heat_rgb[..., 2] = np.uint8(b)
+
+    heatmap_image = Image.fromarray(
+        heat_rgb,
+        mode="RGB"
+    )
+
+    # --------------------------------------------------------
+    # Create overlay
+    # --------------------------------------------------------
+
+    alpha = np.uint8(
+        210 * heat_array
+    )
+
+    heat_rgba = np.dstack(
+        [
+            heat_rgb,
+            alpha
+        ]
+    )
+
+    heat_overlay = Image.fromarray(
         heat_rgba,
         mode="RGBA"
     )
 
-    result = Image.alpha_composite(
+    overlay_image = Image.alpha_composite(
         original.convert("RGBA"),
-        overlay
+        heat_overlay
+    ).convert("RGB")
+
+    # --------------------------------------------------------
+    # Analyze where the model focused
+    # --------------------------------------------------------
+
+    max_activation = float(
+        np.max(heatmap)
     )
 
-    return result.convert("RGB")
+    threshold = max_activation * 0.60
 
+    active_pixels = np.argwhere(
+        heatmap >= threshold
+    )
 
-# ============================================================
-# 5. CACHED MODEL LOADING
-# ============================================================
+    if len(active_pixels) == 0:
 
-@st.cache_resource
-def load_leaf_predictor():
+        focus_y = heatmap.shape[0] / 2
+        focus_x = heatmap.shape[1] / 2
 
-    predictor = LeafDiseasePredictor()
+    else:
 
-    predictor.load_model()
+        focus_y = float(
+            np.mean(
+                active_pixels[:, 0]
+            )
+        )
 
-    return predictor
+        focus_x = float(
+            np.mean(
+                active_pixels[:, 1]
+            )
+        )
 
+    h, w = heatmap.shape
 
-# ============================================================
-# 6. SESSION STATE
-# ============================================================
+    # Horizontal region
+    if focus_x < w / 3:
+        horizontal = "left"
 
-if "analysis_result" not in st.session_state:
-    st.session_state.analysis_result = None
+    elif focus_x > (2 * w / 3):
+        horizontal = "right"
 
-if "analysis_file_hash" not in st.session_state:
-    st.session_state.analysis_file_hash = None
+    else:
+        horizontal = "central"
 
-if "analysis_image_bytes" not in st.session_state:
-    st.session_state.analysis_image_bytes = None
+    # Vertical region
+    if focus_y < h / 3:
+        vertical = "upper"
 
-if "gradcam_image" not in st.session_state:
-    st.session_state.gradcam_image = None
+    elif focus_y > (2 * h / 3):
+        vertical = "lower"
 
+    else:
+        vertical = "middle"
+
+    if vertical == "middle" and horizontal == "central":
+        focus_region = "central portion"
+
+    elif horizontal == "central":
+        focus_region = f"{vertical}-central portion"
+
+    elif vertical == "middle":
+        focus_region = f"middle-{horizontal} portion"
+
+    else:
+        focus_region = f"{vertical}-{horizontal} portion"
+
+    # --------------------------------------------------------
+    # Attention coverage / explanation strength
+    # --------------------------------------------------------
+
+    # The heatmap is normalized, so its maximum is approximately 1.0.
+    # Coverage above a fixed threshold is more informative than peak value.
+    attention_coverage = float(
+        np.mean(heatmap >= 0.60) * 100.0
+    )
+
+    if attention_coverage <= 5.0:
+
+        strength_text = (
+            "The model's attention is relatively concentrated in a small area."
+        )
+
+    elif attention_coverage <= 15.0:
+
+        strength_text = (
+            "The model shows a moderate concentration of attention across the leaf."
+        )
+
+    else:
+
+        strength_text = (
+            "The model's attention is distributed across a broader portion of the image."
+        )
+
+    explanation = (
+        f"The model's strongest activation is concentrated "
+        f"in the {focus_region} of the leaf. "
+        f"{strength_text} "
+        "These highlighted regions contributed more strongly "
+        "to the selected prediction."
+    )
+
+    return {
+        "original": original,
+        "heatmap": heatmap_image,
+        "overlay": overlay_image,
+        "heatmap_array": heatmap,
+        "focus_region": focus_region,
+        "attention_coverage": attention_coverage,
+        "explanation": explanation
+    }
 
 # ============================================================
 # 7. SIDEBAR
@@ -651,9 +792,8 @@ with status_col:
 
 
 st.write(
-    "Analyze Apple, Potato, and Tomato leaves using "
-    "MobileNetV2 with image-quality protection, "
-    "confidence-aware safety checks, and Grad-CAM explainability."
+    "AI-powered leaf health analysis for Apple, Potato, and Tomato, "
+    "with confidence checks and visual explanations."
 )
 
 st.divider()
@@ -982,130 +1122,134 @@ if st.session_state.analysis_result is not None:
 
 
     # --------------------------------------------------------
-    # Diagnosis result
+    # Clean diagnosis summary
     # --------------------------------------------------------
 
-    if is_unrecognized:
+    st.markdown("### 🌿 Prediction Summary")
 
-        st.warning(
-            "⚠️ **Unrecognized Crop or Foliage**"
-        )
+    prediction_col, confidence_col = st.columns(
+        [1.55, 1],
+        vertical_alignment="center"
+    )
 
-        st.markdown(
-            "The model cannot confidently match this "
-            "image to the supported Apple, Potato, "
-            "or Tomato conditions."
-        )
+    with prediction_col:
 
-        st.info(
-            f"**Nearest Model Match (Uncertain):** "
-            f"{formatted_name}"
-        )
+        crop_name = formatted_name.split(" - ", 1)[0] if " - " in formatted_name else "Unknown crop"
 
-    elif confidence_pct < 70.0:
+        st.markdown(f"### 🌱 {crop_name}")
+        st.caption("Detected crop")
 
-        st.warning(
-            "⚠️ **Low-Confidence Prediction**"
-        )
+        if is_unrecognized:
 
-        st.markdown(
-            f"### [Low Confidence] {formatted_name}"
-        )
+            st.warning("⚠️ Unrecognized or uncertain image")
 
-        st.write(
-            f"The model certainty is "
-            f"**{confidence_pct:.2f}%**, so this result "
-            "should be treated as an estimated prediction."
-        )
+            st.markdown(
+                f"## {formatted_name}"
+            )
 
-    else:
+            st.caption(
+                "This is the nearest model match, but the model "
+                "does not have enough evidence to make a confident "
+                "supported-condition prediction."
+            )
 
-        if is_healthy:
+        elif confidence_pct < 70.0:
 
-            st.success(
-                "🌱 **Healthy Crop Tissue**"
+            st.warning("⚠️ Low-confidence prediction")
+
+            st.markdown(
+                f"## {formatted_name}"
+            )
+
+            st.caption(
+                "The prediction is an estimate and should be "
+                "re-checked with another clear, well-lit leaf image."
+            )
+
+        elif is_healthy:
+
+            st.success("🌱 No disease detected")
+
+            disease_name = (
+                formatted_name.split(" - ", 1)[-1]
+                if " - " in formatted_name
+                else formatted_name
+            )
+
+            st.markdown(
+                f"## {disease_name}"
+            )
+
+            st.caption(
+                "The model identified the uploaded leaf as healthy."
             )
 
         else:
 
-            st.error(
-                "⚠️ **Crop Disease Detected**"
+            st.error("⚠️ Crop disease detected")
+
+            disease_name = (
+                formatted_name.split(" - ", 1)[-1]
+                if " - " in formatted_name
+                else formatted_name
             )
 
-        st.markdown(
-            f"### {formatted_name}"
-        )
-
-        st.caption(
-            "Prediction generated by the trained MobileNetV2 model."
-        )
-
-
-    # --------------------------------------------------------
-    # Confidence section
-    # --------------------------------------------------------
-
-    st.markdown(
-        "#### 🎯 Model Confidence"
-    )
-
-    confidence_col1, confidence_col2 = (
-        st.columns([1, 2])
-    )
-
-    with confidence_col1:
-
-        st.metric(
-            label="Model Certainty",
-            value=f"{confidence_pct:.2f}%"
-        )
-
-    with confidence_col2:
-
-        st.progress(
-            min(
-                max(
-                    confidence_val,
-                    0.0
-                ),
-                1.0
+            st.markdown(
+                f"## {disease_name}"
             )
-        )
 
-        st.caption(
-            f"Top-1 vs Top-2 probability margin: "
-            f"{margin:.2f}"
-        )
+            st.caption(
+                "The model identified a supported crop disease."
+            )
+
+    with confidence_col:
+
+        with st.container(border=True):
+
+            st.markdown("#### 🎯 Model Confidence")
+
+            st.metric(
+                label="Model Certainty",
+                value=f"{confidence_pct:.2f}%"
+            )
+
+            st.progress(
+                min(
+                    max(
+                        confidence_val,
+                        0.0
+                    ),
+                    1.0
+                )
+            )
+
+            st.caption(
+                f"Top-1 vs Top-2 margin: {margin:.2f}"
+            )
 
 
     # --------------------------------------------------------
-    # Scope note
-    # --------------------------------------------------------
-
-    st.info(
-        "ℹ️ **Scope:** LeafGuard AI v1 is trained for "
-        "Apple, Potato, and Tomato leaf conditions."
-    )
-
-
-    # --------------------------------------------------------
-    # Warning
+    # Decision note
     # --------------------------------------------------------
 
     if is_unrecognized:
 
         st.warning(
-            "⚠️ **Unrecognized Crop or Foliage Notice:** "
-            "Please upload a clear close-up leaf image "
-            "from a supported crop."
+            "Please upload a clear close-up leaf image from a "
+            "supported crop: Apple, Potato, or Tomato."
         )
 
     elif confidence_pct < 70.0:
 
-        st.warning(
-            "⚠️ **Low-Confidence Warning:** "
-            "This is an estimated prediction. Try another "
-            "clear, well-lit close-up image for re-evaluation."
+        st.info(
+            "For a more reliable result, try another clear, "
+            "well-lit close-up image of the same leaf."
+        )
+
+    else:
+
+        st.caption(
+            "Supported scope: Apple, Potato, and Tomato leaf conditions."
         )
 
 
@@ -1203,17 +1347,62 @@ if st.session_state.analysis_result is not None:
         text="Step 4 of 4 — Explainable AI"
     )
 
+    # --------------------------------------------------------
+    # Make it explicit that Step 4 explains the Step 2 result
+    # --------------------------------------------------------
+
+    if not is_unrecognized:
+
+        disease_display_name = (
+            formatted_name.split(" - ", 1)[-1]
+            if " - " in formatted_name
+            else formatted_name
+        )
+
+        st.markdown("### 🍃 Prediction Being Explained")
+
+        explain_col1, explain_col2 = st.columns(2)
+
+        with explain_col1:
+
+            with st.container(border=True):
+
+                st.caption("Crop")
+                st.markdown(
+                    f"### 🌱 {formatted_name.split(' - ', 1)[0]}"
+                )
+
+        with explain_col2:
+
+            with st.container(border=True):
+
+                st.caption("Crop Disease")
+                st.markdown(
+                    f"### 🦠 {disease_display_name}"
+                )
+
+        st.info(
+            f"ℹ️ This section explains the Step 2 prediction: "
+            f"**{disease_display_name}**. Grad-CAM does not make a "
+            "new prediction or change the diagnosis."
+        )
+
+    else:
+
+        st.info(
+            "ℹ️ Grad-CAM is unavailable because this prediction "
+            "is currently classified as unrecognized/uncertain."
+        )
+
     st.write(
-        "Grad-CAM highlights regions of the image "
-        "that influenced the model's prediction."
+        "Grad-CAM highlights the image regions that contributed "
+        "more strongly to the prediction already shown in Step 2."
     )
 
     st.caption(
-        "This visualization explains model behavior. "
-        "It does not prove that a highlighted region "
-        "contains the disease."
+        "Red indicates stronger model influence, yellow indicates "
+        "moderate influence, and blue indicates lower influence."
     )
-
 
     # --------------------------------------------------------
     # Generate Grad-CAM button
@@ -1222,7 +1411,7 @@ if st.session_state.analysis_result is not None:
     if not is_unrecognized:
 
         explain_btn = st.button(
-            "🔬 Generate Grad-CAM Explanation",
+            "🔬 Generate Enhanced AI Explanation",
             type="secondary",
             width="stretch",
             key="gradcam_button"
@@ -1250,8 +1439,8 @@ if st.session_state.analysis_result is not None:
                         load_leaf_predictor()
                     )
 
-                    gradcam_image = (
-                        generate_gradcam_overlay(
+                    gradcam_data = (
+                        generate_gradcam_explanation(
                             predictor.model,
                             gradcam_input,
                             result[
@@ -1262,7 +1451,7 @@ if st.session_state.analysis_result is not None:
                     )
 
                     st.session_state.gradcam_image = (
-                        gradcam_image
+                        gradcam_data
                     )
 
                 except Exception as exc:
@@ -1274,51 +1463,74 @@ if st.session_state.analysis_result is not None:
                         f"be generated: {exc}"
                     )
 
-    else:
-
-        st.info(
-            "Grad-CAM is unavailable because this prediction "
-            "is currently classified as unrecognized/uncertain."
-        )
-
-
     # --------------------------------------------------------
-    # Display Grad-CAM
+    # Display Enhanced Grad-CAM
     # --------------------------------------------------------
 
-    if (
-        st.session_state.gradcam_image
-        is not None
-    ):
+    gradcam_data = st.session_state.gradcam_image
+
+    if isinstance(gradcam_data, dict):
 
         st.markdown(
             "### 🧠 Model Attention Visualization"
         )
 
-        st.caption(
-            "Highlighted regions show areas that contributed "
-            "more strongly to the model's prediction."
-        )
-
-        original_col, gradcam_col = (
-            st.columns(2)
-        )
+        original_col, heatmap_col, overlay_col = st.columns(3)
 
         with original_col:
 
             st.image(
-                analysis_image,
+                gradcam_data["original"],
                 caption="Original Leaf",
                 width="stretch"
             )
 
-        with gradcam_col:
+        with heatmap_col:
 
             st.image(
-                st.session_state.gradcam_image,
-                caption="Grad-CAM Explanation",
+                gradcam_data["heatmap"],
+                caption="AI Attention Heatmap",
                 width="stretch"
             )
+
+        with overlay_col:
+
+            st.image(
+                gradcam_data["overlay"],
+                caption="Grad-CAM Overlay",
+                width="stretch"
+            )
+
+        st.markdown(
+            "### 🧠 Where the Model Focused"
+        )
+
+        st.info(
+            gradcam_data["explanation"]
+        )
+
+        focus_col1, focus_col2 = st.columns(2)
+
+        with focus_col1:
+
+            st.metric(
+                "Primary Focus Region",
+                gradcam_data["focus_region"]
+            )
+
+        with focus_col2:
+
+            st.metric(
+                "Attention Coverage",
+                f"{gradcam_data['attention_coverage']:.1f}%"
+            )
+
+        st.warning(
+            "⚠️ **Interpretation Note:** Grad-CAM shows which "
+            "image regions influenced the model's prediction. "
+            "It does not prove that a highlighted region contains "
+            "the disease or represent an exact disease boundary."
+        )
 
 
 # ============================================================
