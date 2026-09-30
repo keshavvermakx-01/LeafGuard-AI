@@ -56,6 +56,12 @@ if "analysis_image_bytes" not in st.session_state:
 if "gradcam_image" not in st.session_state:
     st.session_state.gradcam_image = None
 
+if "chat_messages" not in st.session_state:
+    st.session_state.chat_messages = []
+
+if "chat_open" not in st.session_state:
+    st.session_state.chat_open = False
+
 
 # ============================================================
 # 2. DISEASE KNOWLEDGE BASE
@@ -900,6 +906,8 @@ if uploaded_file is not None:
             st.session_state.analysis_result = None
             st.session_state.analysis_image_bytes = None
             st.session_state.gradcam_image = None
+            st.session_state.chat_messages = []
+            st.session_state.chat_open = False
 
         image = Image.open(
             io.BytesIO(file_bytes)
@@ -967,6 +975,8 @@ if uploaded_file is not None:
                 st.session_state.analysis_result = None
                 st.session_state.analysis_image_bytes = None
                 st.session_state.gradcam_image = None
+                st.session_state.chat_messages = []
+                st.session_state.chat_open = False
 
                 st.error(
                     "Analysis stopped because the image "
@@ -1002,6 +1012,8 @@ if uploaded_file is not None:
                         )
 
                         st.session_state.gradcam_image = None
+                        st.session_state.chat_messages = []
+                        st.session_state.chat_open = False
 
                         st.success(
                             "✅ Step 1 completed. "
@@ -1013,6 +1025,8 @@ if uploaded_file is not None:
                         st.session_state.analysis_result = None
                         st.session_state.analysis_image_bytes = None
                         st.session_state.gradcam_image = None
+                        st.session_state.chat_messages = []
+                        st.session_state.chat_open = False
 
                         st.error(
                             f"❌ **Prediction Error:** {err}"
@@ -1531,6 +1545,503 @@ if st.session_state.analysis_result is not None:
             "It does not prove that a highlighted region contains "
             "the disease or represent an exact disease boundary."
         )
+
+
+
+# ========================================================
+# LEAFGUARD AI ASSISTANT (NO API REQUIRED)
+# Floating chat launcher with expandable assistant panel.
+# ========================================================
+
+# The chat assistant is opened from a floating circular button
+# fixed to the bottom-right corner of the browser window.
+st.markdown(
+    """
+    <style>
+    /* Floating LeafGuard chat launcher */
+    .st-key-leafguard_chat_launcher {
+        position: fixed !important;
+        right: 24px !important;
+        bottom: 24px !important;
+        z-index: 100000 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 70px !important;
+        height: 70px !important;
+    }
+
+    .st-key-leafguard_chat_launcher button {
+        width: 70px !important;
+        height: 70px !important;
+        min-height: 70px !important;
+        border-radius: 50% !important;
+        padding: 0 !important;
+        font-size: 40px !important;
+        line-height: 1 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        box-shadow: 0 6px 22px rgba(0, 0, 0, 0.22) !important;
+    }
+
+    .st-key-leafguard_chat_launcher button p {
+        font-size: 0 !important;
+        line-height: 1 !important;
+        margin: 0 !important;
+    }
+
+    /* White outline chat-bubble icon; launcher color stays unchanged */
+    .st-key-leafguard_chat_launcher button::before {
+        content: "";
+        width: 27px !important;
+        height: 19px !important;
+        border: 3px solid #ffffff !important;
+        border-radius: 4px !important;
+        box-sizing: border-box !important;
+        display: block !important;
+        position: absolute !important;
+        left: 50% !important;
+        top: 50% !important;
+        transform: translate(-50%, -50%) !important;
+    }
+
+    .st-key-leafguard_chat_launcher button::after {
+        content: "";
+        position: absolute !important;
+        width: 8px !important;
+        height: 8px !important;
+        border-left: 3px solid #ffffff !important;
+        border-bottom: 3px solid #ffffff !important;
+        left: calc(50% + 5px) !important;
+        top: calc(50% + 6px) !important;
+        transform: rotate(-12deg) !important;
+        background: transparent !important;
+    }
+
+    /* Clear, visible close button inside the chat panel */
+    .st-key-leafguard_chat_close button {
+        width: 42px !important;
+        height: 42px !important;
+        min-height: 42px !important;
+        padding: 0 !important;
+        border-radius: 10px !important;
+        background: #1f2937 !important;
+        color: #ffffff !important;
+        border: 1px solid #334155 !important;
+        font-size: 20px !important;
+        font-weight: 700 !important;
+        line-height: 1 !important;
+        box-shadow: none !important;
+    }
+
+    .st-key-leafguard_chat_close button p {
+        color: #ffffff !important;
+        font-size: 20px !important;
+        margin: 0 !important;
+    }
+
+    /* Floating chat panel */
+    .st-key-leafguard_chat_panel {
+        position: fixed !important;
+        right: 24px !important;
+        bottom: 98px !important;
+        width: min(390px, calc(100vw - 48px)) !important;
+        max-height: 72vh !important;
+        overflow-y: auto !important;
+        z-index: 99999 !important;
+        background: #ffffff !important;
+        color: #172033 !important;
+        border: 1px solid rgba(128, 128, 128, 0.25) !important;
+        border-radius: 18px !important;
+        padding: 14px !important;
+        box-shadow: 0 10px 35px rgba(0, 0, 0, 0.22) !important;
+    }
+
+    .st-key-leafguard_chat_panel [data-testid="stChatMessageContent"],
+    .st-key-leafguard_chat_panel [data-testid="stChatMessageContent"] p,
+    .st-key-leafguard_chat_panel [data-testid="stChatMessageContent"] li,
+    .st-key-leafguard_chat_panel label,
+    .st-key-leafguard_chat_panel .stMarkdown,
+    .st-key-leafguard_chat_panel .stCaption {
+        color: #172033 !important;
+    }
+
+    .st-key-leafguard_chat_panel input {
+        color: #172033 !important;
+        background: #f5f7fa !important;
+    }
+
+    .st-key-leafguard_chat_panel input::placeholder {
+        color: #697386 !important;
+    }
+
+    /* Make the chat send button clearly visible on the white panel */
+    .st-key-leafguard_chat_panel .stFormSubmitButton button {
+        width: 48px !important;
+        height: 42px !important;
+        min-height: 42px !important;
+        padding: 0 !important;
+        border-radius: 10px !important;
+        background: #2563eb !important;
+        color: #ffffff !important;
+        border: 1px solid #1d4ed8 !important;
+        font-size: 20px !important;
+        font-weight: 700 !important;
+        line-height: 1 !important;
+        box-shadow: none !important;
+    }
+
+    .st-key-leafguard_chat_panel .stFormSubmitButton button p {
+        color: #ffffff !important;
+        font-size: 20px !important;
+        margin: 0 !important;
+    }
+
+    .leafguard-chat-title {
+        font-size: 1.05rem;
+        font-weight: 700;
+        margin-bottom: 2px;
+    }
+
+    .leafguard-chat-context {
+        font-size: 0.82rem;
+        opacity: 0.75;
+        margin-bottom: 8px;
+    }
+
+    .leafguard-chat-suggestions {
+        font-size: 0.76rem;
+        opacity: 0.68;
+        margin-top: 3px;
+    }
+
+    @media (max-width: 600px) {
+        .st-key-leafguard_chat_launcher {
+            right: 16px !important;
+            bottom: 16px !important;
+            width: 64px !important;
+            height: 64px !important;
+        }
+
+        .st-key-leafguard_chat_launcher button {
+            width: 64px !important;
+            height: 64px !important;
+            min-height: 64px !important;
+            font-size: 36px !important;
+        }
+
+        .st-key-leafguard_chat_launcher button p {
+            font-size: 36px !important;
+        }
+
+        .st-key-leafguard_chat_panel {
+            right: 16px !important;
+            bottom: 88px !important;
+            width: calc(100vw - 32px) !important;
+            max-height: 68vh !important;
+        }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# --------------------------------------------------------
+# Floating launcher
+# --------------------------------------------------------
+
+launcher_label = "Chat" if not st.session_state.chat_open else "✕"
+
+if st.button(
+    launcher_label,
+    key="leafguard_chat_launcher",
+    help="Open LeafGuard AI Assistant" if not st.session_state.chat_open else "Close LeafGuard AI Assistant",
+):
+    st.session_state.chat_open = not st.session_state.chat_open
+
+# --------------------------------------------------------
+# Expandable chat panel
+# --------------------------------------------------------
+
+if st.session_state.chat_open:
+
+    with st.container(key="leafguard_chat_panel"):
+
+        header_col1, header_col2 = st.columns([5, 1])
+
+        with header_col1:
+            st.markdown(
+                '<div class="leafguard-chat-title">💬 LeafGuard AI Assistant</div>',
+                unsafe_allow_html=True,
+            )
+
+        with header_col2:
+            if st.button(
+                "✕",
+                key="leafguard_chat_close",
+                help="Close chat",
+            ):
+                st.session_state.chat_open = False
+                st.rerun()
+
+        st.markdown(
+            '<div class="leafguard-chat-context">Ask about your current prediction, symptoms, confidence, recommended action, or Grad-CAM.</div>',
+            unsafe_allow_html=True,
+        )
+
+        # The assistant is available before upload and becomes result-aware after analysis.
+        if st.session_state.analysis_result is None:
+            st.markdown(
+                '<div class="leafguard-chat-context">No leaf has been analyzed yet. Ask about LeafGuard, supported crops, image quality, or Grad-CAM.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            chat_result = st.session_state.analysis_result
+            chat_class = chat_result["predicted_class_name"]
+            chat_formatted = chat_class.replace("___", " - ").replace("_", " ")
+            chat_crop = chat_formatted.split(" - ", 1)[0] if " - " in chat_formatted else "Unknown crop"
+            chat_disease = chat_formatted.split(" - ", 1)[-1] if " - " in chat_formatted else chat_formatted
+            chat_confidence = float(chat_result["confidence"]) * 100.0
+
+            with st.container(border=True):
+                st.caption("Current analysis")
+                context_col1, context_col2, context_col3 = st.columns(3)
+                with context_col1:
+                    st.markdown(f"**🌱 {chat_crop}**")
+                with context_col2:
+                    st.markdown(f"**🦠 {chat_disease}**")
+                with context_col3:
+                    st.markdown(f"**🎯 {chat_confidence:.2f}%**")
+
+        # Initial greeting.
+        if len(st.session_state.chat_messages) == 0:
+            greeting = "Hello! I’m the LeafGuard AI Assistant."
+            st.session_state.chat_messages.append(
+                {"role": "assistant", "content": greeting}
+            )
+
+        # Display history.
+        for message in st.session_state.chat_messages:
+            with st.chat_message(message["role"]):
+                st.write(message["content"])
+
+        # Reuse the existing local assistant function.
+        def local_leafguard_response(question):
+            """
+            Local, rule-based LeafGuard assistant.
+            Uses the current prediction and DISEASE_INFO knowledge base.
+            No external API or API key is required.
+            """
+
+            q = question.strip().lower()
+
+            if not q:
+                return "Please type a question about your LeafGuard result."
+
+            if any(term in q for term in [
+                "supported crop",
+                "which crops",
+                "what crops",
+                "supported plant",
+                "supported plants"
+            ]):
+                return (
+                    "LeafGuard AI currently supports Apple, Potato, and Tomato "
+                    "leaf conditions across 17 trained classes."
+                )
+
+            if any(term in q for term in [
+                "grad-cam",
+                "grad cam",
+                "heatmap",
+                "attention map",
+                "focus"
+            ]):
+                if isinstance(st.session_state.gradcam_image, dict):
+                    focus = st.session_state.gradcam_image.get(
+                        "focus_region",
+                        "the highlighted region"
+                    )
+                    coverage = st.session_state.gradcam_image.get(
+                        "attention_coverage",
+                        0.0
+                    )
+                    explanation = st.session_state.gradcam_image.get(
+                        "explanation",
+                        "The highlighted regions contributed more strongly to the prediction."
+                    )
+                    return (
+                        f"Grad-CAM explains the existing Step 2 prediction. "
+                        f"The primary focus region is the {focus}, with about "
+                        f"{coverage:.1f}% attention coverage. {explanation} "
+                        "The heatmap shows model influence; it is not an exact disease boundary."
+                    )
+
+                return (
+                    "Grad-CAM shows which image regions contributed more strongly "
+                    "to the model's existing prediction. Generate the attention map "
+                    "in Step 4 to see the visual explanation."
+                )
+
+            if any(term in q for term in [
+                "image quality",
+                "photo quality",
+                "blurry",
+                "dark image",
+                "lighting"
+            ]):
+                return (
+                    "LeafGuard checks image resolution, darkness, overexposure, "
+                    "and image detail before running inference. A clear, focused, "
+                    "well-lit close-up leaf photo gives the model a better input."
+                )
+
+            if st.session_state.analysis_result is None:
+                return (
+                    "Please upload and analyze a leaf first. After a result is available, "
+                    "I can explain the crop, prediction, confidence, symptoms, recommended "
+                    "general action, and Grad-CAM."
+                )
+
+            current_result = st.session_state.analysis_result
+            current_class = current_result["predicted_class_name"]
+            current_confidence = float(current_result["confidence"])
+            current_confidence_pct = current_confidence * 100.0
+            current_formatted = (
+                current_class.replace("___", " - ").replace("_", " ")
+            )
+            current_crop = (
+                current_formatted.split(" - ", 1)[0]
+                if " - " in current_formatted
+                else "Unknown crop"
+            )
+            current_disease = (
+                current_formatted.split(" - ", 1)[-1]
+                if " - " in current_formatted
+                else current_formatted
+            )
+            current_healthy = "healthy" in current_class.lower()
+
+            current_info = DISEASE_INFO.get(
+                current_class,
+                {
+                    "description": "No detailed description available.",
+                    "symptoms": "N/A",
+                    "recommendation": "Consult a local agricultural extension specialist for guidance."
+                }
+            )
+
+            if any(term in q for term in [
+                "what is the crop",
+                "which crop",
+                "crop name",
+                "plant name"
+            ]):
+                return f"The detected crop is {current_crop}."
+
+            if any(term in q for term in [
+                "what disease",
+                "which disease",
+                "disease name",
+                "diagnosis",
+                "what did you detect",
+                "what is wrong"
+            ]):
+                if current_healthy:
+                    return f"LeafGuard detected {current_crop} as healthy. No disease was detected."
+                return f"LeafGuard identified {current_disease} on the {current_crop} leaf."
+
+            if any(term in q for term in [
+                "confidence",
+                "certainty",
+                "sure",
+                "probability",
+                "how accurate"
+            ]):
+                sorted_probs = sorted(
+                    [float(p) for p in current_result["all_probabilities"]],
+                    reverse=True
+                )
+                top2 = sorted_probs[1] if len(sorted_probs) > 1 else 0.0
+                current_margin = sorted_probs[0] - top2
+                if current_confidence_pct >= 70.0:
+                    level = "relatively high"
+                elif current_confidence_pct >= 50.0:
+                    level = "lower"
+                else:
+                    level = "low"
+                return (
+                    f"The model confidence is {current_confidence_pct:.2f}%, which is {level} "
+                    f"for this prediction. The Top-1 vs Top-2 probability margin is "
+                    f"{current_margin:.2f}. Confidence is a model score, not a guarantee of diagnosis."
+                )
+
+            if any(term in q for term in [
+                "symptom",
+                "signs",
+                "look like",
+                "appearance"
+            ]):
+                return f"Common symptoms associated with {current_disease}: {current_info['symptoms']}"
+
+            if any(term in q for term in [
+                "what should i do",
+                "what do i do",
+                "recommend",
+                "recommendation",
+                "treatment",
+                "manage",
+                "management",
+                "next step",
+                "how can i help"
+            ]):
+                return f"General action for {current_disease}: {current_info['recommendation']}"
+
+            if any(term in q for term in [
+                "what is",
+                "explain",
+                "meaning",
+                "tell me about",
+                "why"
+            ]):
+                return f"{current_disease}: {current_info['description']}"
+
+            return (
+                "I can help with your current LeafGuard result. Try asking: "
+                "'What disease was detected?', 'What are the symptoms?', "
+                "'What should I do?', 'Why is the confidence high?', or "
+                "'What did Grad-CAM show?'"
+            )
+
+        st.markdown(
+            '<div class="leafguard-chat-suggestions">Try: What crops are supported? • How does LeafGuard work? • What does Grad-CAM mean?</div>',
+            unsafe_allow_html=True,
+        )
+
+        with st.form("leafguard_chat_form", clear_on_submit=True):
+            input_col, send_col = st.columns([6, 1])
+            with input_col:
+                user_question = st.text_input(
+                    "Ask LeafGuard AI",
+                    key="leafguard_chat_input",
+                    label_visibility="collapsed",
+                    placeholder="Ask LeafGuard AI...",
+                )
+            with send_col:
+                submit_chat = st.form_submit_button("➤", use_container_width=True)
+
+        if submit_chat and user_question:
+            st.session_state.chat_messages.append(
+                {"role": "user", "content": user_question}
+            )
+
+            assistant_reply = local_leafguard_response(user_question)
+
+            st.session_state.chat_messages.append(
+                {"role": "assistant", "content": assistant_reply}
+            )
+
+            st.rerun()
 
 
 # ============================================================
