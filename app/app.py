@@ -97,6 +97,15 @@ if "analysis_stage" not in st.session_state:
 if "analysis_mode" not in st.session_state:
     st.session_state.analysis_mode = None
 
+if "scan_history" not in st.session_state:
+    st.session_state.scan_history = []
+
+if "history_single_recorded_hash" not in st.session_state:
+    st.session_state.history_single_recorded_hash = None
+
+if "history_batch_recorded_signature" not in st.session_state:
+    st.session_state.history_batch_recorded_signature = None
+
 
 # ============================================================
 # 2. DISEASE KNOWLEDGE BASE
@@ -890,6 +899,61 @@ st.divider()
 
 
 # ============================================================
+# SCAN HISTORY HELPERS
+# Session-only history for completed single and batch analyses.
+# ============================================================
+
+def _format_prediction_for_history(raw_class_name):
+    formatted = str(raw_class_name).replace("___", " - ").replace("_", " ")
+    if " - " in formatted:
+        crop_name, condition_name = formatted.split(" - ", 1)
+    else:
+        crop_name, condition_name = "Unknown crop", formatted
+    return crop_name, condition_name
+
+
+def _append_scan_history(record, unique_key):
+    if unique_key in {item.get("_key") for item in st.session_state.scan_history}:
+        return
+
+    history_record = dict(record)
+    history_record["_key"] = unique_key
+    st.session_state.scan_history.append(history_record)
+
+
+def _single_history_record(result, image_name):
+    raw_class = result.get("predicted_class_name", "Unknown")
+    crop_name, condition_name = _format_prediction_for_history(raw_class)
+    confidence = float(result.get("confidence", 0.0))
+    probabilities = sorted(
+        [float(p) for p in result.get("all_probabilities", [])],
+        reverse=True,
+    )
+    top1 = probabilities[0] if probabilities else confidence
+    top2 = probabilities[1] if len(probabilities) > 1 else 0.0
+    margin = top1 - top2
+    uncertain = top1 < 0.50 or margin < 0.20
+    healthy = "healthy" in raw_class.lower()
+
+    if uncertain:
+        status = "Uncertain"
+    elif healthy:
+        status = "No disease detected"
+    else:
+        status = "Crop disease detected"
+
+    return {
+        "Date & Time": datetime.now().strftime("%d %b %Y, %H:%M"),
+        "Type": "Single",
+        "Image": image_name,
+        "Crop": crop_name,
+        "Prediction": condition_name,
+        "Confidence": f"{confidence * 100.0:.2f}%",
+        "Status": status,
+    }
+
+
+# ============================================================
 # PDF REPORT HELPERS / BUILDERS
 # Defined before the UI code that generates reports.
 # ============================================================
@@ -1464,6 +1528,7 @@ if st.session_state.analysis_stage == 1:
                         st.session_state.chat_open = False
                         st.session_state.analysis_mode = None
                         st.session_state.analysis_stage = 1
+                        st.session_state.history_single_recorded_hash = None
 
                     image = Image.open(
                         io.BytesIO(single_file_bytes)
@@ -1531,6 +1596,7 @@ if st.session_state.analysis_stage == 1:
                     st.session_state.batch_file_signature = batch_signature
                     st.session_state.analysis_mode = None
                     st.session_state.analysis_stage = 1
+                    st.session_state.history_batch_recorded_signature = None
 
                 st.info(f"{len(batch_files)} image(s) selected.")
 
@@ -1590,6 +1656,14 @@ if st.session_state.analysis_stage == 1:
                         st.session_state.chat_open = False
                         st.session_state.analysis_mode = "single"
                         st.session_state.analysis_stage = 2
+
+                        history_key = f"single:{current_file_hash}"
+                        if st.session_state.history_single_recorded_hash != history_key:
+                            _append_scan_history(
+                                _single_history_record(result, uploaded_file.name),
+                                history_key,
+                            )
+                            st.session_state.history_single_recorded_hash = history_key
 
                         st.rerun()
 
@@ -1687,6 +1761,24 @@ if st.session_state.analysis_stage == 1:
             st.session_state.batch_results = results
             st.session_state.analysis_mode = "batch"
             st.session_state.analysis_stage = 2
+
+            if st.session_state.history_batch_recorded_signature != batch_signature:
+                batch_timestamp = datetime.now().strftime("%d %b %Y, %H:%M")
+                for batch_row in results:
+                    _append_scan_history(
+                        {
+                            "Date & Time": batch_timestamp,
+                            "Type": "Batch",
+                            "Image": batch_row.get("Image", "—"),
+                            "Crop": batch_row.get("Crop", "—"),
+                            "Prediction": batch_row.get("Prediction", "—"),
+                            "Confidence": batch_row.get("Confidence", "—"),
+                            "Status": batch_row.get("Status", "—"),
+                        },
+                        f"batch:{batch_signature}:{batch_row.get('Image', '—')}",
+                    )
+                st.session_state.history_batch_recorded_signature = batch_signature
+
             st.rerun()
 
 
@@ -1707,6 +1799,8 @@ if st.session_state.analysis_stage == 2:
         st.session_state.batch_image_bytes = {}
         st.session_state.batch_file_signature = None
         st.session_state.analysis_file_hash = None
+        st.session_state.history_single_recorded_hash = None
+        st.session_state.history_batch_recorded_signature = None
         st.session_state.chat_messages = []
         st.session_state.chat_open = False
         st.rerun()
@@ -2800,7 +2894,56 @@ if st.session_state.chat_open:
 
 
 # ============================================================
-# 12. FOOTER
+# 12. SCAN HISTORY
+# Session-only history of completed analyses.
+# ============================================================
+
+st.divider()
+st.subheader("🕘 Scan History")
+st.caption(
+    "Recent analyses from this browser session. History is cleared when the session ends."
+)
+
+if st.session_state.scan_history:
+
+    history_view = []
+    for item in reversed(st.session_state.scan_history):
+        history_view.append(
+            {
+                "Date & Time": item.get("Date & Time", "—"),
+                "Type": item.get("Type", "—"),
+                "Image": item.get("Image", "—"),
+                "Crop": item.get("Crop", "—"),
+                "Prediction": item.get("Prediction", "—"),
+                "Confidence": item.get("Confidence", "—"),
+                "Status": item.get("Status", "—"),
+            }
+        )
+
+    history_col1, history_col2 = st.columns([5, 1])
+
+    with history_col1:
+        st.dataframe(
+            history_view,
+            width="stretch",
+            hide_index=True,
+        )
+
+    with history_col2:
+        st.write("")
+        st.write("")
+        if st.button("🗑️ Clear History", key="clear_scan_history", width="stretch"):
+            st.session_state.scan_history = []
+            st.session_state.history_single_recorded_hash = None
+            st.session_state.history_batch_recorded_signature = None
+            st.rerun()
+
+else:
+    st.info("No scans yet. Complete a single-photo or batch analysis to build your history.")
+
+
+# ============================================================
+# 13. FOOTER
 # ============================================================
 
 st.divider()
