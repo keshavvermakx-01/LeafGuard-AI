@@ -19,6 +19,26 @@ import tensorflow as tf
 import streamlit as st
 from PIL import Image
 
+# PDF report generation
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.lib.utils import ImageReader
+from reportlab.platypus import (
+    Image as RLImage,
+    KeepTogether,
+    PageBreak,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
+from xml.sax.saxutils import escape
+from datetime import datetime
+
 from src.config import IMAGE_SIZE
 from src.predict import LeafDiseasePredictor
 from src.preprocessing import preprocess_single_image
@@ -64,6 +84,9 @@ if "chat_open" not in st.session_state:
 
 if "batch_results" not in st.session_state:
     st.session_state.batch_results = []
+
+if "batch_image_bytes" not in st.session_state:
+    st.session_state.batch_image_bytes = {}
 
 if "batch_file_signature" not in st.session_state:
     st.session_state.batch_file_signature = None
@@ -867,6 +890,518 @@ st.divider()
 
 
 # ============================================================
+# PDF REPORT HELPERS / BUILDERS
+# Defined before the UI code that generates reports.
+# ============================================================
+
+def _pdf_safe_text(value):
+    """Normalize common Unicode punctuation for standard PDF fonts."""
+    text = str(value if value is not None else "")
+    replacements = {
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u00d7": "x",
+        "\u2022": "-",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text
+
+
+def _pil_png_stream(pil_image):
+    stream = io.BytesIO()
+    pil_image.save(stream, format="PNG")
+    stream.seek(0)
+    return stream
+
+
+def _reportlab_image(pil_image, max_width, max_height):
+    stream = _pil_png_stream(pil_image)
+    width, height = pil_image.size
+    if width <= 0 or height <= 0:
+        raise ValueError("Invalid image dimensions for PDF report.")
+    scale = min(max_width / width, max_height / height)
+    return RLImage(stream, width=width * scale, height=height * scale)
+
+
+def build_diagnosis_pdf(result, analysis_image_bytes, gradcam_data=None):
+    """Create a downloadable single-image LeafGuard diagnosis report."""
+
+    buffer = io.BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=0.55 * inch,
+        leftMargin=0.55 * inch,
+        topMargin=0.55 * inch,
+        bottomMargin=0.55 * inch,
+        title="LeafGuard AI Diagnosis Report",
+        author="LeafGuard AI",
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "LeafGuardTitle",
+        parent=styles["Title"],
+        fontName="Helvetica-Bold",
+        fontSize=20,
+        leading=24,
+        alignment=TA_CENTER,
+        spaceAfter=5,
+    )
+    subtitle_style = ParagraphStyle(
+        "LeafGuardSubtitle",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=10,
+        textColor=colors.HexColor("#5B6573"),
+        alignment=TA_CENTER,
+        spaceAfter=14,
+    )
+    heading_style = ParagraphStyle(
+        "LeafGuardHeading",
+        parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=13,
+        leading=16,
+        spaceBefore=10,
+        spaceAfter=6,
+    )
+    body_style = ParagraphStyle(
+        "LeafGuardBody",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=9.5,
+        leading=14,
+        spaceAfter=6,
+    )
+    small_style = ParagraphStyle(
+        "LeafGuardSmall",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=8,
+        leading=11,
+        textColor=colors.HexColor("#5B6573"),
+    )
+
+    def p(text, style=body_style):
+        return Paragraph(escape(_pdf_safe_text(text)), style)
+
+    raw_class = result.get("predicted_class_name", "Unknown")
+    formatted = _pdf_safe_text(raw_class).replace("___", " - ").replace("_", " ")
+    if " - " in formatted:
+        crop = formatted.split(" - ", 1)[0]
+        condition = formatted.split(" - ", 1)[1]
+    else:
+        crop = "Unknown crop"
+        condition = formatted
+
+    confidence = float(result.get("confidence", 0.0)) * 100.0
+    all_probs = sorted(
+        [float(x) for x in result.get("all_probabilities", [])],
+        reverse=True,
+    )
+    top2 = all_probs[1] if len(all_probs) > 1 else 0.0
+    margin = (all_probs[0] if all_probs else confidence / 100.0) - top2
+    is_unrecognized = (
+        (all_probs[0] if all_probs else confidence / 100.0) < 0.50
+        or margin < 0.20
+    )
+    is_healthy = "healthy" in raw_class.lower()
+
+    info = DISEASE_INFO.get(raw_class, {})
+    description = info.get("description", "No detailed condition description is available.")
+    symptoms = info.get("symptoms", "No detailed symptom information is available.")
+    recommendation = info.get("recommendation", "Consult a local agricultural extension specialist for guidance.")
+
+    status = (
+        "Unrecognized / uncertain image"
+        if is_unrecognized
+        else "Healthy - no disease detected"
+        if is_healthy
+        else "Supported crop disease detected"
+    )
+
+    story = []
+    story.append(Paragraph("LEAFGUARD AI", title_style))
+    story.append(Paragraph("Plant Health Analysis Report", subtitle_style))
+
+    try:
+        analysis_image = Image.open(io.BytesIO(analysis_image_bytes)).convert("RGB")
+        story.append(
+            _reportlab_image(analysis_image, max_width=4.8 * inch, max_height=3.55 * inch)
+        )
+        story.append(Spacer(1, 8))
+    except Exception:
+        story.append(p("The analyzed leaf image could not be embedded in the report.", small_style))
+
+    summary_data = [
+        [p("Analysis date", small_style), p(datetime.now().strftime("%d %B %Y, %H:%M"), body_style)],
+        [p("Crop", small_style), p(crop, body_style)],
+        [p("Prediction", small_style), p(condition, body_style)],
+        [p("Model confidence", small_style), p(f"{confidence:.2f}%", body_style)],
+        [p("Top-1 vs Top-2 margin", small_style), p(f"{margin:.2f}", body_style)],
+        [p("Analysis status", small_style), p(status, body_style)],
+        [p("Image quality", small_style), p("Passed", body_style)],
+    ]
+
+    summary_table = Table(summary_data, colWidths=[1.65 * inch, 5.15 * inch])
+    summary_table.setStyle(
+        TableStyle([
+            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F3F6F8")),
+            ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#D7DEE5")),
+            ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E3E8ED")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 7),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ])
+    )
+    story.append(summary_table)
+
+    story.append(Paragraph("Condition Overview", heading_style))
+    story.append(p(description))
+
+    story.append(Paragraph("Common Symptoms", heading_style))
+    story.append(p(symptoms))
+
+    story.append(Paragraph("Recommended General Action", heading_style))
+    story.append(p(recommendation))
+
+    if isinstance(gradcam_data, dict):
+        story.append(PageBreak())
+        story.append(Paragraph("Explainability - Grad-CAM", heading_style))
+
+        # Put the three visualizations in equal-width cells with their captions underneath.
+        visual_cells = []
+        for key, label in [
+            ("original", "Original Leaf"),
+            ("heatmap", "AI Attention Heatmap"),
+            ("overlay", "Grad-CAM Overlay"),
+        ]:
+            image = gradcam_data.get(key)
+            if image is not None:
+                try:
+                    cell_image = _reportlab_image(image, 2.02 * inch, 2.0 * inch)
+                    visual_cells.append(
+                        Table(
+                            [
+                                [cell_image],
+                                [p(label, small_style)],
+                            ],
+                            colWidths=[2.08 * inch],
+                        )
+                    )
+                except Exception:
+                    visual_cells.append(
+                        Table(
+                            [
+                                [p("Image unavailable", small_style)],
+                                [p(label, small_style)],
+                            ],
+                            colWidths=[2.08 * inch],
+                        )
+                    )
+            else:
+                visual_cells.append(
+                    Table(
+                        [
+                            [p("Image unavailable", small_style)],
+                            [p(label, small_style)],
+                        ],
+                        colWidths=[2.08 * inch],
+                    )
+                )
+
+        gradcam_table = Table(
+            [visual_cells],
+            colWidths=[2.18 * inch, 2.18 * inch, 2.18 * inch],
+        )
+        gradcam_table.setStyle(
+            TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#D7DEE5")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E3E8ED")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 7),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ])
+        )
+        story.append(gradcam_table)
+        story.append(Spacer(1, 8))
+        story.append(
+            p(
+                f"Primary focus region: {gradcam_data.get('focus_region', 'not available')} - "
+                f"Attention coverage: {float(gradcam_data.get('attention_coverage', 0.0)):.1f}%"
+            )
+        )
+        story.append(
+            p(
+                gradcam_data.get(
+                    "explanation",
+                    "Grad-CAM explains model attention for the existing prediction.",
+                )
+            )
+        )
+    else:
+        story.append(Paragraph("Explainability - Grad-CAM", heading_style))
+        story.append(
+            p(
+                "Grad-CAM was not generated during this session. Return to Step 4 and generate the explanation before creating another report if you want the attention maps included."
+            )
+        )
+
+    note_data = [[p("Important note", small_style), p("Grad-CAM explains which image regions influenced the model prediction. It does not prove that a highlighted region contains the disease or define an exact disease boundary. Model confidence is a score, not a guarantee of diagnosis.", small_style)]]
+    note_table = Table(note_data, colWidths=[1.2 * inch, 5.6 * inch])
+    note_table.setStyle(
+        TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FFF8E6")),
+            ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#E8D9A8")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 7),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+            ("TOPPADDING", (0, 0), (-1, -1), 7),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ])
+    )
+    story.append(Spacer(1, 8))
+    story.append(note_table)
+    story.append(Spacer(1, 10))
+    story.append(p("LeafGuard AI - MobileNetV2 - 17 Apple, Potato & Tomato conditions", small_style))
+
+    doc.build(story)
+    return buffer.getvalue()
+
+
+
+# --------------------------------------------------------
+# Batch-analysis PDF report
+# --------------------------------------------------------
+def build_batch_pdf(batch_results, batch_image_bytes=None):
+    """Create a downloadable PDF report summarizing a batch analysis."""
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=0.45 * inch,
+        leftMargin=0.45 * inch,
+        topMargin=0.5 * inch,
+        bottomMargin=0.5 * inch,
+        title="LeafGuard AI Batch Analysis Report",
+        author="LeafGuard AI",
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "BatchTitle",
+        parent=styles["Title"],
+        fontName="Helvetica-Bold",
+        fontSize=19,
+        leading=23,
+        alignment=TA_CENTER,
+        spaceAfter=5,
+    )
+    subtitle_style = ParagraphStyle(
+        "BatchSubtitle",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=9.5,
+        textColor=colors.HexColor("#5B6573"),
+        alignment=TA_CENTER,
+        spaceAfter=12,
+    )
+    heading_style = ParagraphStyle(
+        "BatchHeading",
+        parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=12.5,
+        leading=15,
+        spaceBefore=8,
+        spaceAfter=6,
+    )
+    body_style = ParagraphStyle(
+        "BatchBody",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=8.8,
+        leading=12,
+        spaceAfter=4,
+    )
+    small_style = ParagraphStyle(
+        "BatchSmall",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=7.5,
+        leading=9.5,
+        textColor=colors.HexColor("#5B6573"),
+    )
+    table_style = ParagraphStyle(
+        "BatchTable",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=7.2,
+        leading=9,
+    )
+
+    def p(value, style=body_style):
+        return Paragraph(escape(_pdf_safe_text(value)), style)
+
+    rows = list(batch_results or [])
+    total = len(rows)
+    disease_count = sum(1 for r in rows if r.get("Status") == "Crop disease detected")
+    healthy_count = sum(1 for r in rows if r.get("Status") == "No disease detected")
+    uncertain_count = sum(1 for r in rows if r.get("Status") == "Uncertain")
+    error_count = sum(1 for r in rows if r.get("Status") == "Analysis error")
+
+    story = [
+        Paragraph("LEAFGUARD AI", title_style),
+        Paragraph("Batch Plant Health Analysis Report", subtitle_style),
+    ]
+
+    summary_cards = Table(
+        [[
+            p("Total Images", small_style),
+            p("Disease Detected", small_style),
+            p("Healthy", small_style),
+            p("Uncertain", small_style),
+            p("Errors", small_style),
+        ], [
+            p(str(total), heading_style),
+            p(str(disease_count), heading_style),
+            p(str(healthy_count), heading_style),
+            p(str(uncertain_count), heading_style),
+            p(str(error_count), heading_style),
+        ]],
+        colWidths=[1.32 * inch] * 5,
+    )
+    summary_cards.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F3F6F8")),
+        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#D7DEE5")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E3E8ED")),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.append(summary_cards)
+    story.append(Spacer(1, 10))
+    story.append(p(f"Generated: {datetime.now().strftime('%d %B %Y, %H:%M')}" , small_style))
+
+    story.append(Paragraph("Batch Results", heading_style))
+    table_data = [[
+        p("Image", table_style),
+        p("Crop", table_style),
+        p("Prediction", table_style),
+        p("Confidence", table_style),
+        p("Status", table_style),
+        p("Quality", table_style),
+    ]]
+    for row in rows:
+        table_data.append([
+            p(row.get("Image", ""), table_style),
+            p(row.get("Crop", ""), table_style),
+            p(row.get("Prediction", ""), table_style),
+            p(row.get("Confidence", ""), table_style),
+            p(row.get("Status", ""), table_style),
+            p(row.get("Quality", ""), table_style),
+        ])
+
+    results_table = Table(
+        table_data,
+        colWidths=[2.05 * inch, 0.83 * inch, 1.25 * inch, 0.78 * inch, 1.32 * inch, 1.1 * inch],
+        repeatRows=1,
+    )
+    results_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E2430")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#D7DEE5")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#E3E8ED")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.append(results_table)
+
+    # Add image details when bytes are available. No batch Grad-CAM is generated here.
+    image_map = batch_image_bytes or {}
+    detail_rows = [
+        row for row in rows
+        if row.get("Image") in image_map
+    ]
+    if detail_rows:
+        story.append(PageBreak())
+        story.append(Paragraph("Image Details", heading_style))
+        story.append(
+            p(
+                "The sections below document each analyzed image. This batch report does not generate or include Grad-CAM visualizations."
+            )
+        )
+
+        for idx, row in enumerate(detail_rows):
+            if idx > 0:
+                story.append(Spacer(1, 10))
+
+            image = None
+            try:
+                image = Image.open(io.BytesIO(image_map[row.get("Image")])).convert("RGB")
+            except Exception:
+                image = None
+
+            detail_left = []
+            if image is not None:
+                detail_left.append(_reportlab_image(image, 2.15 * inch, 1.85 * inch))
+            else:
+                detail_left.append(p("Image unavailable", small_style))
+
+            detail_data = [
+                [p("Image", small_style), p(row.get("Image", ""), body_style)],
+                [p("Crop", small_style), p(row.get("Crop", ""), body_style)],
+                [p("Prediction", small_style), p(row.get("Prediction", ""), body_style)],
+                [p("Confidence", small_style), p(row.get("Confidence", ""), body_style)],
+                [p("Status", small_style), p(row.get("Status", ""), body_style)],
+                [p("Quality", small_style), p(row.get("Quality", ""), body_style)],
+            ]
+            detail_table = Table(detail_data, colWidths=[1.1 * inch, 3.7 * inch])
+            detail_table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F3F6F8")),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#D7DEE5")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#E3E8ED")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]))
+
+            row_table = Table([[detail_left[0], detail_table]], colWidths=[2.35 * inch, 4.9 * inch])
+            row_table.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]))
+            story.append(row_table)
+
+    story.append(Spacer(1, 10))
+    story.append(p(
+        "LeafGuard AI - MobileNetV2 - 17 Apple, Potato & Tomato conditions - Batch analysis summary"
+    , small_style))
+
+    doc.build(story)
+    return buffer.getvalue()
+
+# ============================================================
 # 10. STEP 1 - UPLOAD
 # ============================================================
 
@@ -992,6 +1527,7 @@ if st.session_state.analysis_stage == 1:
 
                 if st.session_state.batch_file_signature != batch_signature:
                     st.session_state.batch_results = []
+                    st.session_state.batch_image_bytes = {}
                     st.session_state.batch_file_signature = batch_signature
                     st.session_state.analysis_mode = None
                     st.session_state.analysis_stage = 1
@@ -1000,6 +1536,7 @@ if st.session_state.analysis_stage == 1:
 
             else:
                 st.session_state.batch_results = []
+                st.session_state.batch_image_bytes = {}
                 st.session_state.batch_file_signature = None
                 st.caption("Select multiple images for batch analysis.")
 
@@ -1083,6 +1620,8 @@ if st.session_state.analysis_stage == 1:
                             io.BytesIO(file_bytes)
                         ).convert("RGB")
 
+                        st.session_state.batch_image_bytes[batch_file.name] = file_bytes
+
                         quality_ok, quality_msg = check_image_quality(batch_image)
 
                         if not quality_ok:
@@ -1165,6 +1704,7 @@ if st.session_state.analysis_stage == 2:
         st.session_state.analysis_image_bytes = None
         st.session_state.gradcam_image = None
         st.session_state.batch_results = []
+        st.session_state.batch_image_bytes = {}
         st.session_state.batch_file_signature = None
         st.session_state.analysis_file_hash = None
         st.session_state.chat_messages = []
@@ -1204,6 +1744,23 @@ if st.session_state.analysis_stage == 2:
                 width="stretch",
                 key="batch_csv_download",
             )
+
+            try:
+                batch_pdf = build_batch_pdf(
+                    st.session_state.batch_results,
+                    st.session_state.batch_image_bytes,
+                )
+
+                st.download_button(
+                    "📄 Download Batch Analysis Report (PDF)",
+                    data=batch_pdf,
+                    file_name="leafguard_batch_analysis_report.pdf",
+                    mime="application/pdf",
+                    width="stretch",
+                    key="batch_pdf_report_download",
+                )
+            except Exception as batch_pdf_error:
+                st.error(f"❌ Could not create the batch PDF report: {batch_pdf_error}")
 
         else:
             st.info("No batch results are available yet.")
@@ -1706,6 +2263,44 @@ if st.session_state.analysis_stage == 2:
                 )
 
 
+
+
+# ============================================================
+# 11B. PDF DIAGNOSIS REPORT
+# ============================================================
+
+
+
+# --------------------------------------------------------
+# Single-image PDF report
+# --------------------------------------------------------
+if (
+    st.session_state.analysis_stage == 2
+    and st.session_state.analysis_mode == "single"
+    and st.session_state.analysis_result is not None
+    and st.session_state.analysis_image_bytes is not None
+):
+    st.divider()
+    st.subheader("📄 Diagnosis Report")
+    st.caption("Create a downloadable PDF from the existing LeafGuard single-image analysis.")
+
+    try:
+        diagnosis_pdf = build_diagnosis_pdf(
+            st.session_state.analysis_result,
+            st.session_state.analysis_image_bytes,
+            st.session_state.gradcam_image,
+        )
+
+        st.download_button(
+            "📄 Download Diagnosis Report",
+            data=diagnosis_pdf,
+            file_name="leafguard_diagnosis_report.pdf",
+            mime="application/pdf",
+            width="stretch",
+            key="leafguard_pdf_report_download",
+        )
+    except Exception as pdf_error:
+        st.error(f"❌ Could not create the PDF report: {pdf_error}")
 
         # ========================================================
 
