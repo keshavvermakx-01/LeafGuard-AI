@@ -2,6 +2,10 @@ import sys
 from pathlib import Path
 import hashlib
 import io
+import json
+from urllib.parse import urlencode
+import requests
+from requests import RequestException
 
 # ============================================================
 # LEAFGUARD AI
@@ -46,6 +50,188 @@ from src.preprocessing import preprocess_single_image
 @st.cache_resource(show_spinner=False)
 def load_leaf_predictor():
     return LeafDiseasePredictor()
+
+def weather_description(code):
+    mapping = {
+        0: "Clear sky",
+        1: "Mainly clear",
+        2: "Partly cloudy",
+        3: "Overcast",
+        45: "Fog",
+        48: "Depositing rime fog",
+        51: "Light drizzle",
+        53: "Moderate drizzle",
+        55: "Dense drizzle",
+        56: "Light freezing drizzle",
+        57: "Dense freezing drizzle",
+        61: "Slight rain",
+        63: "Moderate rain",
+        65: "Heavy rain",
+        66: "Light freezing rain",
+        67: "Heavy freezing rain",
+        71: "Slight snow fall",
+        73: "Moderate snow fall",
+        75: "Heavy snow fall",
+        77: "Snow grains",
+        80: "Slight rain showers",
+        81: "Moderate rain showers",
+        82: "Violent rain showers",
+        85: "Slight snow showers",
+        86: "Heavy snow showers",
+        95: "Thunderstorm",
+        96: "Thunderstorm with slight hail",
+        99: "Thunderstorm with heavy hail",
+    }
+    try:
+        return mapping.get(int(code), "Unknown conditions")
+    except (TypeError, ValueError):
+        return "Unknown conditions"
+
+
+def _get_json_with_retry(url, timeout=20, retries=2):
+    """Fetch JSON with retries for transient network failures."""
+    last_error = None
+    for attempt in range(retries + 1):
+        try:
+            response = requests.get(
+                url,
+                timeout=timeout,
+                headers={"User-Agent": "LeafGuard-AI/1.0"},
+            )
+            response.raise_for_status()
+            return response.json()
+        except RequestException as exc:
+            last_error = exc
+            if attempt < retries:
+                continue
+
+    raise RuntimeError(
+        "Weather service could not be reached from this computer/network. "
+        "Check your internet connection, VPN/proxy/firewall settings, then try again."
+    ) from last_error
+
+
+def _choose_best_place(results, requested_name):
+    """Choose the most useful city result instead of blindly taking result zero."""
+    requested_lower = requested_name.strip().lower()
+    candidates = [r for r in results if r.get("latitude") is not None and r.get("longitude") is not None]
+    if not candidates:
+        raise ValueError("Location not found. Try a city or town name, optionally followed by a country.")
+
+    # Prefer an exact city-name match; otherwise prefer populated city/admin entries.
+    exact = [
+        r for r in candidates
+        if str(r.get("name", "")).strip().lower() == requested_lower
+    ]
+    if exact:
+        candidates = exact
+
+    def score(place):
+        feature = str(place.get("feature_code", ""))
+        feature_score = 2 if feature.startswith("PPLA") or feature == "PPLC" else 0
+        population = float(place.get("population") or 0)
+        return (feature_score, population)
+
+    return max(candidates, key=score)
+
+
+def _next_hour_probability(hourly_times, probabilities, current_time):
+    """Return precipitation probability for the first forecast hour after current time."""
+    if not hourly_times or not probabilities:
+        return None
+
+    try:
+        current_dt = datetime.fromisoformat(current_time)
+    except (TypeError, ValueError):
+        return probabilities[1] if len(probabilities) > 1 else probabilities[0]
+
+    for idx, time_value in enumerate(hourly_times):
+        try:
+            hourly_dt = datetime.fromisoformat(time_value)
+        except (TypeError, ValueError):
+            continue
+        if hourly_dt > current_dt and idx < len(probabilities):
+            return probabilities[idx]
+
+    return probabilities[-1] if probabilities else None
+
+
+def fetch_weather_for_location(location_query):
+    geocode_params = urlencode({
+        "name": location_query,
+        "count": 10,
+        "language": "en",
+        "format": "json",
+    })
+    geocode_url = f"https://geocoding-api.open-meteo.com/v1/search?{geocode_params}"
+
+    geo = _get_json_with_retry(geocode_url)
+    results = geo.get("results") or []
+    place = _choose_best_place(results, location_query)
+
+    latitude = place["latitude"]
+    longitude = place["longitude"]
+
+    weather_params = urlencode({
+        "latitude": latitude,
+        "longitude": longitude,
+        "current": ",".join([
+            "temperature_2m",
+            "relative_humidity_2m",
+            "apparent_temperature",
+            "precipitation",
+            "weather_code",
+            "wind_speed_10m",
+            "wind_gusts_10m",
+            "cloud_cover",
+            "evapotranspiration",
+            "vapour_pressure_deficit",
+            "dew_point_2m",
+            "is_day",
+        ]),
+        "hourly": "precipitation_probability",
+        "forecast_hours": 4,
+        "timezone": "auto",
+    })
+    weather_url = f"https://api.open-meteo.com/v1/forecast?{weather_params}"
+    weather = _get_json_with_retry(weather_url)
+
+    current = weather.get("current", {})
+    hourly = weather.get("hourly", {})
+    probabilities = hourly.get("precipitation_probability") or []
+    hourly_times = hourly.get("time") or []
+    current_time = current.get("time", "")
+    next_prob = _next_hour_probability(hourly_times, probabilities, current_time)
+
+    label_parts = [place.get("name", location_query)]
+    if place.get("admin1"):
+        label_parts.append(place["admin1"])
+    if place.get("country"):
+        label_parts.append(place["country"])
+
+    return {
+        "location": ", ".join(label_parts),
+        "latitude": latitude,
+        "longitude": longitude,
+        "timezone": weather.get("timezone", place.get("timezone", "")),
+        "time": current_time,
+        "temperature": current.get("temperature_2m"),
+        "humidity": current.get("relative_humidity_2m"),
+        "apparent_temperature": current.get("apparent_temperature"),
+        "precipitation": current.get("precipitation"),
+        "weather_code": current.get("weather_code"),
+        "weather_description": weather_description(current.get("weather_code")),
+        "wind_speed": current.get("wind_speed_10m"),
+        "wind_gusts": current.get("wind_gusts_10m"),
+        "cloud_cover": current.get("cloud_cover"),
+        "evapotranspiration": current.get("evapotranspiration"),
+        "vpd": current.get("vapour_pressure_deficit"),
+        "dew_point": current.get("dew_point_2m"),
+        "is_day": current.get("is_day"),
+        "precipitation_probability": next_prob,
+    }
+
+
 # ============================================================
 # 1. PAGE CONFIGURATION
 # ============================================================
@@ -105,6 +291,12 @@ if "history_single_recorded_hash" not in st.session_state:
 
 if "history_batch_recorded_signature" not in st.session_state:
     st.session_state.history_batch_recorded_signature = None
+
+if "weather_data" not in st.session_state:
+    st.session_state.weather_data = None
+
+if "weather_location_label" not in st.session_state:
+    st.session_state.weather_location_label = None
 
 
 # ============================================================
@@ -797,6 +989,24 @@ with st.sidebar:
 
     st.divider()
 
+    st.markdown("### ✨ Features")
+    st.markdown(
+        """
+        • Single Photo Analysis  
+        • Batch Analysis  
+        • Image Quality Check  
+        • Confidence-Aware Prediction  
+        • Disease Information  
+        • Grad-CAM Explainability  
+        • AI Assistant  
+        • PDF Diagnosis Reports  
+        • Scan History  
+        • Weather & Environment
+        """
+    )
+
+    st.divider()
+
     st.markdown("### 🛡️ Safety")
 
     st.caption(
@@ -812,6 +1022,163 @@ with st.sidebar:
 
 
 # ============================================================
+# ============================================================
+# TOP-RIGHT WEATHER CONTROL (STEP 1 ONLY)
+# The Weather button sits near the top-right of the app, below
+# Streamlit's toolbar/Deploy area. Clicking it opens the full report.
+# ============================================================
+
+if st.session_state.analysis_stage == 1:
+
+    _weather_spacer, _weather_top = st.columns([6.8, 1.2], gap="small")
+
+    with _weather_top:
+        # Weather control is positioned at the top-right of the app, below the Streamlit toolbar.
+        with st.popover("🌦️ Weather", use_container_width=True):
+            st.markdown("### 🌦️ Weather & Environment")
+            st.caption(
+                "Open the full weather report for a city or town. "
+                "Weather values provide environmental context and are not a disease diagnosis."
+            )
+
+            weather_location = st.text_input(
+                "Location",
+                value=st.session_state.weather_location_label or "",
+                placeholder="Jammu, India",
+                key="weather_location_input",
+            )
+
+            weather_btn = st.button(
+                "🌤️ Get Weather",
+                key="weather_get_button",
+                use_container_width=True,
+            )
+
+            if weather_btn:
+                if not weather_location.strip():
+                    st.warning("Please enter a city or town.")
+                else:
+                    with st.spinner("Fetching weather..."):
+                        try:
+                            st.session_state.weather_data = fetch_weather_for_location(
+                                weather_location.strip()
+                            )
+                            st.session_state.weather_location_label = weather_location.strip()
+                        except RuntimeError as exc:
+                            st.session_state.weather_data = None
+                            st.error(str(exc))
+                        except Exception as exc:
+                            st.session_state.weather_data = None
+                            st.error(f"Weather lookup failed: {exc}")
+
+            if st.session_state.weather_data:
+                w = st.session_state.weather_data
+
+                st.caption(f"📍 {w.get('location', 'Unknown location')}")
+
+                # Current condition
+                st.markdown(
+                    f"**Current condition:** {w.get('weather_description', 'Unknown conditions')}"
+                )
+
+                # Primary weather values
+                temp_col1, temp_col2 = st.columns(2)
+                with temp_col1:
+                    temp = w.get("temperature")
+                    st.metric(
+                        "Temperature",
+                        f"{temp:.1f} °C" if isinstance(temp, (int, float)) else "—",
+                    )
+                with temp_col2:
+                    feels = w.get("apparent_temperature")
+                    st.metric(
+                        "Feels Like",
+                        f"{feels:.1f} °C" if isinstance(feels, (int, float)) else "—",
+                    )
+
+                temp_col3, temp_col4 = st.columns(2)
+                with temp_col3:
+                    humidity = w.get("humidity")
+                    st.metric(
+                        "Humidity",
+                        f"{humidity:.0f}%" if isinstance(humidity, (int, float)) else "—",
+                    )
+                with temp_col4:
+                    rain_next = w.get("precipitation_probability")
+                    st.metric(
+                        "Rain Next Hour",
+                        f"{rain_next:.0f}%" if isinstance(rain_next, (int, float)) else "—",
+                    )
+
+                st.markdown("#### Detailed Conditions")
+
+                detail_rows = [
+                    (
+                        "🌧️ Precipitation",
+                        f"{w['precipitation']:.1f} mm"
+                        if isinstance(w.get("precipitation"), (int, float))
+                        else "—",
+                    ),
+                    (
+                        "💨 Wind",
+                        f"{w['wind_speed']:.1f} km/h"
+                        if isinstance(w.get("wind_speed"), (int, float))
+                        else "—",
+                    ),
+                    (
+                        "💨 Wind Gusts",
+                        f"{w['wind_gusts']:.1f} km/h"
+                        if isinstance(w.get("wind_gusts"), (int, float))
+                        else "—",
+                    ),
+                    (
+                        "☁️ Cloud Cover",
+                        f"{w['cloud_cover']:.0f}%"
+                        if isinstance(w.get("cloud_cover"), (int, float))
+                        else "—",
+                    ),
+                    (
+                        "💧 Dew Point",
+                        f"{w['dew_point']:.1f} °C"
+                        if isinstance(w.get("dew_point"), (int, float))
+                        else "—",
+                    ),
+                    (
+                        "🌿 Evapotranspiration",
+                        f"{w['evapotranspiration']:.2f} mm"
+                        if isinstance(w.get("evapotranspiration"), (int, float))
+                        else "—",
+                    ),
+                    (
+                        "📈 Vapour Pressure Deficit",
+                        f"{w['vpd']:.2f} kPa"
+                        if isinstance(w.get("vpd"), (int, float))
+                        else "—",
+                    ),
+                ]
+
+                detail_left, detail_right = st.columns(2)
+                for idx, (label, value) in enumerate(detail_rows):
+                    target_col = detail_left if idx % 2 == 0 else detail_right
+                    with target_col:
+                        st.markdown(
+                            f"**{label}**  \n{value}"
+                        )
+
+                st.caption(
+                    f"Local weather time: {w.get('time', '—')} • "
+                    f"Timezone: {w.get('timezone', '—')}"
+                )
+
+            else:
+                st.info(
+                    "Enter a location and select **Get Weather** to open the full report."
+                )
+
+
+# ============================================================
+
+
 # 8. TOP BRAND HEADER
 # ============================================================
 
@@ -1466,26 +1833,30 @@ def build_batch_pdf(batch_results, batch_image_bytes=None):
     return buffer.getvalue()
 
 # ============================================================
-# 10. STEP 1 - UPLOAD
+# ============================================================
+# 9. STEP 1 INTRO
 # ============================================================
 
 if st.session_state.analysis_stage == 1:
 
-    st.subheader(
-        "📷 Step 1 — Upload & Prepare Your Leaf"
-    )
-
+    st.subheader("📷 Step 1 — Upload & Prepare Your Leaf")
     st.progress(
         0.25,
-        text="Step 1 of 4 — Upload your leaf image"
+        text="Step 1 of 4 — Upload your leaf image",
     )
-
     st.info(
         "Choose a single leaf photo or analyze multiple leaf photos at once. "
         "Both options use the same LeafGuard quality checks and MobileNetV2 model."
     )
 
+
+# 10. STEP 1 - UPLOAD
+# ============================================================
+
+if st.session_state.analysis_stage == 1:
+
     single_col, batch_col = st.columns(
+
         2,
         gap="large"
     )
@@ -1781,6 +2152,9 @@ if st.session_state.analysis_stage == 1:
 
             st.rerun()
 
+        else:
+            st.warning("⚠️ Please upload a leaf image first.")
+
 
 # ============================================================
 # 11. STEP 2 - AI DIAGNOSIS / BATCH RESULTS
@@ -1789,7 +2163,7 @@ if st.session_state.analysis_stage == 1:
 
 if st.session_state.analysis_stage == 2:
 
-    if st.button("← New Analysis", key="new_analysis_button"):
+    if st.button("← Back", key="new_analysis_button"):
         st.session_state.analysis_stage = 1
         st.session_state.analysis_mode = None
         st.session_state.analysis_result = None
@@ -2893,6 +3267,25 @@ if st.session_state.chat_open:
             st.rerun()
 
 
+# --------------------------------------------------------
+# Clear Back button styling
+# --------------------------------------------------------
+st.markdown(
+    """
+    <style>
+    .st-key-new_analysis_button button {
+        min-width: 105px !important;
+        min-height: 42px !important;
+        border-radius: 10px !important;
+        font-weight: 700 !important;
+        padding: 0.35rem 0.9rem !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
 # ============================================================
 # 12. SCAN HISTORY
 # Session-only history of completed analyses.
@@ -2942,8 +3335,10 @@ else:
     st.info("No scans yet. Complete a single-photo or batch analysis to build your history.")
 
 
+
+
 # ============================================================
-# 13. FOOTER
+# 14. FOOTER
 # ============================================================
 
 st.divider()
