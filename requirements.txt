@@ -3,3 +3,5 @@ tensorflow
 scikit-learn
 pillow
 numpy
+requests
+reportlab
