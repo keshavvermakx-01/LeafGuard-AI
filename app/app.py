@@ -62,6 +62,18 @@ if "chat_messages" not in st.session_state:
 if "chat_open" not in st.session_state:
     st.session_state.chat_open = False
 
+if "batch_results" not in st.session_state:
+    st.session_state.batch_results = []
+
+if "batch_file_signature" not in st.session_state:
+    st.session_state.batch_file_signature = None
+
+if "analysis_stage" not in st.session_state:
+    st.session_state.analysis_stage = 1
+
+if "analysis_mode" not in st.session_state:
+    st.session_state.analysis_mode = None
+
 
 # ============================================================
 # 2. DISEASE KNOWLEDGE BASE
@@ -858,700 +870,848 @@ st.divider()
 # 10. STEP 1 - UPLOAD
 # ============================================================
 
-st.subheader(
-    "📷 Step 1 — Upload & Prepare Your Leaf"
-)
+if st.session_state.analysis_stage == 1:
 
-st.progress(
-    0.25,
-    text="Step 1 of 4 — Upload your leaf image"
-)
+    st.subheader(
+        "📷 Step 1 — Upload & Prepare Your Leaf"
+    )
 
-st.info(
-    "Use a clear, focused, well-lit close-up image "
-    "from Apple, Potato, or Tomato."
-)
+    st.progress(
+        0.25,
+        text="Step 1 of 4 — Upload your leaf image"
+    )
 
-uploaded_file = st.file_uploader(
-    "Choose a crop leaf image",
-    type=[
-        "jpg",
-        "jpeg",
-        "png"
-    ],
-    key="leaf_uploader"
-)
+    st.info(
+        "Choose a single leaf photo or analyze multiple leaf photos at once. "
+        "Both options use the same LeafGuard quality checks and MobileNetV2 model."
+    )
 
+    single_col, batch_col = st.columns(
+        2,
+        gap="large"
+    )
 
-if uploaded_file is not None:
+    # ------------------------------------------------------------
+    # SINGLE PHOTO
+    # ------------------------------------------------------------
 
-    try:
+    with single_col:
 
-        file_bytes = uploaded_file.getvalue()
+        with st.container(border=True):
 
-        current_file_hash = hashlib.sha256(
-            file_bytes
-        ).hexdigest()
+            st.markdown("### 📷 Single Photo")
+            st.caption("Analyze one leaf image")
 
-        # If this is a new image, remove the previous result.
-        if (
-            st.session_state.analysis_file_hash
-            != current_file_hash
-        ):
-
-            st.session_state.analysis_file_hash = (
-                current_file_hash
+            uploaded_file = st.file_uploader(
+                "Choose one crop leaf image",
+                type=["jpg", "jpeg", "png"],
+                key="leaf_uploader"
             )
 
-            st.session_state.analysis_result = None
-            st.session_state.analysis_image_bytes = None
-            st.session_state.gradcam_image = None
-            st.session_state.chat_messages = []
-            st.session_state.chat_open = False
+            single_quality_ok = False
+            single_quality_msg = None
+            single_file_bytes = None
 
-        image = Image.open(
-            io.BytesIO(file_bytes)
-        ).convert("RGB")
+            if uploaded_file is not None:
 
-        st.image(
-            image,
-            caption=f"Uploaded Leaf • {uploaded_file.name}",
-            width="stretch"
-        )
+                try:
 
-        # Image quality check
-        is_quality_ok, quality_msg = (
-            check_image_quality(image)
-        )
+                    single_file_bytes = uploaded_file.getvalue()
+                    current_file_hash = hashlib.sha256(single_file_bytes).hexdigest()
 
-        quality_col1, quality_col2 = st.columns(
-            2
-        )
+                    if st.session_state.analysis_file_hash != current_file_hash:
 
-        with quality_col1:
-
-            st.write(
-                f"**Resolution**  \n"
-                f"{image.width} × {image.height}px"
-            )
-
-        with quality_col2:
-
-            if is_quality_ok:
-
-                st.success(
-                    "✅ Image quality passed"
-                )
-
-            else:
-
-                st.warning(
-                    "⚠️ Image quality issue"
-                )
-
-        if not is_quality_ok:
-
-            st.warning(
-                quality_msg
-            )
-
-        st.write("")
-
-        analyze_btn = st.button(
-            "🧪 Analyze Leaf",
-            type="primary",
-            width="stretch",
-            key="analyze_button"
-        )
-
-        # ----------------------------------------------------
-        # RUN INFERENCE
-        # ----------------------------------------------------
-
-        if analyze_btn:
-
-            if not is_quality_ok:
-
-                st.session_state.analysis_result = None
-                st.session_state.analysis_image_bytes = None
-                st.session_state.gradcam_image = None
-                st.session_state.chat_messages = []
-                st.session_state.chat_open = False
-
-                st.error(
-                    "Analysis stopped because the image "
-                    "did not pass the quality checks."
-                )
-
-            else:
-
-                with st.spinner(
-                    "🔬 Running LeafGuard AI analysis..."
-                ):
-
-                    try:
-
-                        predictor = (
-                            load_leaf_predictor()
-                        )
-
-                        uploaded_file.seek(0)
-
-                        result = (
-                            predictor.predict(
-                                uploaded_file
-                            )
-                        )
-
-                        st.session_state.analysis_result = (
-                            result
-                        )
-
-                        st.session_state.analysis_image_bytes = (
-                            file_bytes
-                        )
-
-                        st.session_state.gradcam_image = None
-                        st.session_state.chat_messages = []
-                        st.session_state.chat_open = False
-
-                        st.success(
-                            "✅ Step 1 completed. "
-                            "Your image has been analyzed."
-                        )
-
-                    except Exception as err:
-
+                        st.session_state.analysis_file_hash = current_file_hash
                         st.session_state.analysis_result = None
                         st.session_state.analysis_image_bytes = None
                         st.session_state.gradcam_image = None
                         st.session_state.chat_messages = []
                         st.session_state.chat_open = False
+                        st.session_state.analysis_mode = None
+                        st.session_state.analysis_stage = 1
 
-                        st.error(
-                            f"❌ **Prediction Error:** {err}"
+                    image = Image.open(
+                        io.BytesIO(single_file_bytes)
+                    ).convert("RGB")
+
+                    st.image(
+                        image,
+                        caption=f"Uploaded Leaf • {uploaded_file.name}",
+                        width="stretch"
+                    )
+
+                    single_quality_ok, single_quality_msg = check_image_quality(image)
+
+                    q1, q2 = st.columns(2)
+
+                    with q1:
+                        st.write(
+                            f"**Resolution**  \n"
+                            f"{image.width} × {image.height}px"
                         )
 
-    except Exception as err:
+                    with q2:
+                        if single_quality_ok:
+                            st.success("✅ Quality passed")
+                        else:
+                            st.warning("⚠️ Quality issue")
 
-        st.error(
-            f"❌ **Invalid Image:** {err}"
+                    if not single_quality_ok:
+                        st.caption(single_quality_msg)
+
+                except Exception as err:
+                    st.error(f"❌ **Invalid Image:** {err}")
+
+            else:
+                st.caption("Upload one image to analyze a single leaf.")
+
+    # ------------------------------------------------------------
+    # BATCH ANALYSIS
+    # ------------------------------------------------------------
+
+    with batch_col:
+
+        with st.container(border=True):
+
+            st.markdown("### 📂 Batch Analysis")
+            st.caption("Analyze multiple leaf images in one run")
+
+            batch_files = st.file_uploader(
+                "Choose multiple crop leaf images",
+                type=["jpg", "jpeg", "png"],
+                accept_multiple_files=True,
+                key="batch_leaf_uploader"
+            )
+
+            if batch_files:
+
+                batch_signature = tuple(
+                    (file.name, len(file.getvalue()))
+                    for file in batch_files
+                )
+
+                if st.session_state.batch_file_signature != batch_signature:
+                    st.session_state.batch_results = []
+                    st.session_state.batch_file_signature = batch_signature
+                    st.session_state.analysis_mode = None
+                    st.session_state.analysis_stage = 1
+
+                st.info(f"{len(batch_files)} image(s) selected.")
+
+            else:
+                st.session_state.batch_results = []
+                st.session_state.batch_file_signature = None
+                st.caption("Select multiple images for batch analysis.")
+
+    # ------------------------------------------------------------
+    # ONE COMMON ANALYZE LEAF BUTTON
+    # ------------------------------------------------------------
+
+    st.write("")
+
+    if uploaded_file is not None and batch_files:
+        st.warning(
+            "Please use either Single Photo or Batch Analysis, not both at the same time."
         )
 
-
-else:
-
-    st.warning(
-        "Upload a leaf image to begin Step 1."
+    analyze_leaf_btn = st.button(
+        "🧪 Analyze Leaf",
+        type="primary",
+        width="stretch",
+        key="common_analyze_leaf_button"
     )
+
+    if analyze_leaf_btn:
+
+        single_selected = uploaded_file is not None
+        batch_selected = bool(batch_files)
+
+        if single_selected and batch_selected:
+
+            st.error(
+                "Please select only one analysis option: Single Photo or Batch Analysis."
+            )
+
+        elif single_selected:
+
+            if not single_quality_ok:
+                st.error(
+                    "Analysis stopped because the image did not pass the quality checks."
+                )
+
+            else:
+                with st.spinner("🔬 Running LeafGuard AI analysis..."):
+                    try:
+                        predictor = load_leaf_predictor()
+                        uploaded_file.seek(0)
+                        result = predictor.predict(uploaded_file)
+
+                        st.session_state.analysis_result = result
+                        st.session_state.analysis_image_bytes = single_file_bytes
+                        st.session_state.gradcam_image = None
+                        st.session_state.chat_messages = []
+                        st.session_state.chat_open = False
+                        st.session_state.analysis_mode = "single"
+                        st.session_state.analysis_stage = 2
+
+                        st.rerun()
+
+                    except Exception as err:
+                        st.error(f"❌ **Prediction Error:** {err}")
+
+        elif batch_selected:
+
+            predictor = load_leaf_predictor()
+            results = []
+
+            with st.spinner("🔬 Analyzing selected leaf images..."):
+
+                for batch_file in batch_files:
+
+                    file_bytes = batch_file.getvalue()
+                    row = {
+                        "Image": batch_file.name,
+                        "Crop": "—",
+                        "Prediction": "—",
+                        "Confidence": "—",
+                        "Status": "Not analyzed",
+                        "Quality": "—",
+                    }
+
+                    try:
+                        batch_image = Image.open(
+                            io.BytesIO(file_bytes)
+                        ).convert("RGB")
+
+                        quality_ok, quality_msg = check_image_quality(batch_image)
+
+                        if not quality_ok:
+                            row["Status"] = "Quality check failed"
+                            row["Quality"] = quality_msg or "Image quality issue"
+                            results.append(row)
+                            continue
+
+                        batch_file.seek(0)
+                        prediction = predictor.predict(batch_file)
+
+                        raw_class = prediction["predicted_class_name"]
+                        confidence = float(prediction["confidence"])
+                        confidence_pct = confidence * 100.0
+
+                        formatted = (
+                            raw_class
+                            .replace("___", " - ")
+                            .replace("_", " ")
+                        )
+
+                        crop = (
+                            formatted.split(" - ", 1)[0]
+                            if " - " in formatted
+                            else "Unknown crop"
+                        )
+
+                        disease = (
+                            formatted.split(" - ", 1)[-1]
+                            if " - " in formatted
+                            else formatted
+                        )
+
+                        probabilities = sorted(
+                            [float(p) for p in prediction["all_probabilities"]],
+                            reverse=True
+                        )
+
+                        top1 = probabilities[0] if probabilities else confidence
+                        top2 = probabilities[1] if len(probabilities) > 1 else 0.0
+                        margin = top1 - top2
+                        uncertain = top1 < 0.50 or margin < 0.20
+                        healthy = "healthy" in raw_class.lower()
+
+                        row["Crop"] = crop
+                        row["Prediction"] = disease
+                        row["Confidence"] = f"{confidence_pct:.2f}%"
+                        row["Quality"] = "Passed"
+
+                        if uncertain:
+                            row["Status"] = "Uncertain"
+                        elif healthy:
+                            row["Status"] = "No disease detected"
+                        else:
+                            row["Status"] = "Crop disease detected"
+
+                    except Exception as exc:
+                        row["Status"] = "Analysis error"
+                        row["Quality"] = str(exc)
+
+                    results.append(row)
+
+            st.session_state.batch_results = results
+            st.session_state.analysis_mode = "batch"
+            st.session_state.analysis_stage = 2
+            st.rerun()
 
 
 # ============================================================
-# 11. STEP 2 - AI DIAGNOSIS
-#     Appears only after Step 1 is completed.
+# 11. STEP 2 - AI DIAGNOSIS / BATCH RESULTS
+#     Appears on the next screen after Step 1 analysis.
 # ============================================================
 
-if st.session_state.analysis_result is not None:
+if st.session_state.analysis_stage == 2:
 
-    st.divider()
+    if st.button("← New Analysis", key="new_analysis_button"):
+        st.session_state.analysis_stage = 1
+        st.session_state.analysis_mode = None
+        st.session_state.analysis_result = None
+        st.session_state.analysis_image_bytes = None
+        st.session_state.gradcam_image = None
+        st.session_state.batch_results = []
+        st.session_state.batch_file_signature = None
+        st.session_state.analysis_file_hash = None
+        st.session_state.chat_messages = []
+        st.session_state.chat_open = False
+        st.rerun()
 
-    st.subheader(
-        "🔬 Step 2 — AI Diagnosis"
-    )
+    if st.session_state.analysis_mode == "batch":
 
-    st.progress(
-        0.50,
-        text="Step 2 of 4 — Reviewing AI diagnosis"
-    )
-
-    result = (
-        st.session_state.analysis_result
-    )
-
-    analysis_image = Image.open(
-        io.BytesIO(
-            st.session_state.analysis_image_bytes
+        st.divider()
+        st.subheader("📊 Batch Analysis Results")
+        st.progress(0.50, text="Step 2 of 4 — Batch analysis results")
+        st.caption(
+            "The results below were generated using the same image-quality checks, "
+            "MobileNetV2 model, and confidence safeguard as the single-image workflow."
         )
-    ).convert("RGB")
 
-    raw_class_name = (
-        result["predicted_class_name"]
-    )
+        if st.session_state.batch_results:
 
-    confidence_val = float(
-        result["confidence"]
-    )
-
-    confidence_pct = (
-        confidence_val * 100.0
-    )
-
-    # --------------------------------------------------------
-    # Probability analysis
-    # --------------------------------------------------------
-
-    all_probs = sorted(
-        [
-            float(p)
-            for p in result[
-                "all_probabilities"
-            ]
-        ],
-        reverse=True
-    )
-
-    top1_prob = (
-        all_probs[0]
-        if len(all_probs) > 0
-        else confidence_val
-    )
-
-    top2_prob = (
-        all_probs[1]
-        if len(all_probs) > 1
-        else 0.0
-    )
-
-    margin = (
-        top1_prob -
-        top2_prob
-    )
-
-    # Existing Phase 21 safeguard
-    is_unrecognized = (
-        top1_prob < 0.50
-        or margin < 0.20
-    )
-
-    formatted_name = (
-        raw_class_name
-        .replace("___", " - ")
-        .replace("_", " ")
-    )
-
-    is_healthy = (
-        "healthy"
-        in raw_class_name.lower()
-    )
-
-
-    # --------------------------------------------------------
-    # Clean diagnosis summary
-    # --------------------------------------------------------
-
-    st.markdown("### 🌿 Prediction Summary")
-
-    prediction_col, confidence_col = st.columns(
-        [1.55, 1],
-        vertical_alignment="center"
-    )
-
-    with prediction_col:
-
-        crop_name = formatted_name.split(" - ", 1)[0] if " - " in formatted_name else "Unknown crop"
-
-        st.markdown(f"### 🌱 {crop_name}")
-        st.caption("Detected crop")
-
-        if is_unrecognized:
-
-            st.warning("⚠️ Unrecognized or uncertain image")
-
-            st.markdown(
-                f"## {formatted_name}"
+            st.dataframe(
+                st.session_state.batch_results,
+                width="stretch",
+                hide_index=True,
             )
 
-            st.caption(
-                "This is the nearest model match, but the model "
-                "does not have enough evidence to make a confident "
-                "supported-condition prediction."
-            )
+            import csv
+            csv_buffer = io.StringIO()
+            fieldnames = ["Image", "Crop", "Prediction", "Confidence", "Status", "Quality"]
+            writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(st.session_state.batch_results)
 
-        elif confidence_pct < 70.0:
-
-            st.warning("⚠️ Low-confidence prediction")
-
-            st.markdown(
-                f"## {formatted_name}"
-            )
-
-            st.caption(
-                "The prediction is an estimate and should be "
-                "re-checked with another clear, well-lit leaf image."
-            )
-
-        elif is_healthy:
-
-            st.success("🌱 No disease detected")
-
-            disease_name = (
-                formatted_name.split(" - ", 1)[-1]
-                if " - " in formatted_name
-                else formatted_name
-            )
-
-            st.markdown(
-                f"## {disease_name}"
-            )
-
-            st.caption(
-                "The model identified the uploaded leaf as healthy."
+            st.download_button(
+                "⬇️ Download Batch Results (CSV)",
+                data=csv_buffer.getvalue(),
+                file_name="leafguard_batch_results.csv",
+                mime="text/csv",
+                width="stretch",
+                key="batch_csv_download",
             )
 
         else:
+            st.info("No batch results are available yet.")
 
-            st.error("⚠️ Crop disease detected")
+    elif st.session_state.analysis_mode == "single":
 
-            disease_name = (
-                formatted_name.split(" - ", 1)[-1]
-                if " - " in formatted_name
-                else formatted_name
-            )
+        if st.session_state.analysis_result is not None:
 
-            st.markdown(
-                f"## {disease_name}"
-            )
+            st.divider()
 
-            st.caption(
-                "The model identified a supported crop disease."
-            )
-
-    with confidence_col:
-
-        with st.container(border=True):
-
-            st.markdown("#### 🎯 Model Confidence")
-
-            st.metric(
-                label="Model Certainty",
-                value=f"{confidence_pct:.2f}%"
+            st.subheader(
+                "🔬 Step 2 — AI Diagnosis"
             )
 
             st.progress(
-                min(
-                    max(
-                        confidence_val,
-                        0.0
-                    ),
-                    1.0
+                0.50,
+                text="Step 2 of 4 — Reviewing AI diagnosis"
+            )
+
+            result = (
+                st.session_state.analysis_result
+            )
+
+            analysis_image = Image.open(
+                io.BytesIO(
+                    st.session_state.analysis_image_bytes
                 )
+            ).convert("RGB")
+
+            raw_class_name = (
+                result["predicted_class_name"]
+            )
+
+            confidence_val = float(
+                result["confidence"]
+            )
+
+            confidence_pct = (
+                confidence_val * 100.0
+            )
+
+            # --------------------------------------------------------
+            # Probability analysis
+            # --------------------------------------------------------
+
+            all_probs = sorted(
+                [
+                    float(p)
+                    for p in result[
+                        "all_probabilities"
+                    ]
+                ],
+                reverse=True
+            )
+
+            top1_prob = (
+                all_probs[0]
+                if len(all_probs) > 0
+                else confidence_val
+            )
+
+            top2_prob = (
+                all_probs[1]
+                if len(all_probs) > 1
+                else 0.0
+            )
+
+            margin = (
+                top1_prob -
+                top2_prob
+            )
+
+            # Existing Phase 21 safeguard
+            is_unrecognized = (
+                top1_prob < 0.50
+                or margin < 0.20
+            )
+
+            formatted_name = (
+                raw_class_name
+                .replace("___", " - ")
+                .replace("_", " ")
+            )
+
+            is_healthy = (
+                "healthy"
+                in raw_class_name.lower()
+            )
+
+
+            # --------------------------------------------------------
+            # Clean diagnosis summary
+            # --------------------------------------------------------
+
+            st.markdown("### 🌿 Prediction Summary")
+
+            prediction_col, confidence_col = st.columns(
+                [1.55, 1],
+                vertical_alignment="center"
+            )
+
+            with prediction_col:
+
+                crop_name = formatted_name.split(" - ", 1)[0] if " - " in formatted_name else "Unknown crop"
+
+                st.markdown(f"### 🌱 {crop_name}")
+                st.caption("Detected crop")
+
+                if is_unrecognized:
+
+                    st.warning("⚠️ Unrecognized or uncertain image")
+
+                    st.markdown(
+                        f"## {formatted_name}"
+                    )
+
+                    st.caption(
+                        "This is the nearest model match, but the model "
+                        "does not have enough evidence to make a confident "
+                        "supported-condition prediction."
+                    )
+
+                elif confidence_pct < 70.0:
+
+                    st.warning("⚠️ Low-confidence prediction")
+
+                    st.markdown(
+                        f"## {formatted_name}"
+                    )
+
+                    st.caption(
+                        "The prediction is an estimate and should be "
+                        "re-checked with another clear, well-lit leaf image."
+                    )
+
+                elif is_healthy:
+
+                    st.success("🌱 No disease detected")
+
+                    disease_name = (
+                        formatted_name.split(" - ", 1)[-1]
+                        if " - " in formatted_name
+                        else formatted_name
+                    )
+
+                    st.markdown(
+                        f"## {disease_name}"
+                    )
+
+                    st.caption(
+                        "The model identified the uploaded leaf as healthy."
+                    )
+
+                else:
+
+                    st.error("⚠️ Crop disease detected")
+
+                    disease_name = (
+                        formatted_name.split(" - ", 1)[-1]
+                        if " - " in formatted_name
+                        else formatted_name
+                    )
+
+                    st.markdown(
+                        f"## {disease_name}"
+                    )
+
+                    st.caption(
+                        "The model identified a supported crop disease."
+                    )
+
+            with confidence_col:
+
+                with st.container(border=True):
+
+                    st.markdown("#### 🎯 Model Confidence")
+
+                    st.metric(
+                        label="Model Certainty",
+                        value=f"{confidence_pct:.2f}%"
+                    )
+
+                    st.progress(
+                        min(
+                            max(
+                                confidence_val,
+                                0.0
+                            ),
+                            1.0
+                        )
+                    )
+
+                    st.caption(
+                        f"Top-1 vs Top-2 margin: {margin:.2f}"
+                    )
+
+
+            # --------------------------------------------------------
+            # Decision note
+            # --------------------------------------------------------
+
+            if is_unrecognized:
+
+                st.warning(
+                    "Please upload a clear close-up leaf image from a "
+                    "supported crop: Apple, Potato, or Tomato."
+                )
+
+            elif confidence_pct < 70.0:
+
+                st.info(
+                    "For a more reliable result, try another clear, "
+                    "well-lit close-up image of the same leaf."
+                )
+
+            else:
+
+                st.caption(
+                    "Supported scope: Apple, Potato, and Tomato leaf conditions."
+                )
+
+
+            # ========================================================
+            # STEP 3 - UNDERSTAND RESULT
+            # ========================================================
+
+            st.divider()
+
+            st.subheader(
+                "📖 Step 3 — Understand the Result"
+            )
+
+            st.progress(
+                0.75,
+                text="Step 3 of 4 — Condition information"
+            )
+
+            if is_unrecognized:
+
+                st.info(
+                    "Detailed disease information is not shown "
+                    "because the image was not confidently matched "
+                    "to a supported condition."
+                )
+
+            else:
+
+                info = DISEASE_INFO.get(
+                    raw_class_name,
+                    {
+                        "description":
+                            "No detailed description available.",
+
+                        "symptoms":
+                            "N/A",
+
+                        "recommendation":
+                            "Consult a local agricultural "
+                            "extension specialist for guidance."
+                    }
+                )
+
+                info_col1, info_col2 = st.columns(
+                    2
+                )
+
+                with info_col1:
+
+                    with st.container(border=True):
+
+                        st.markdown(
+                            "### 📖 Condition Overview"
+                        )
+
+                        st.write(
+                            info["description"]
+                        )
+
+                with info_col2:
+
+                    with st.container(border=True):
+
+                        st.markdown(
+                            "### 🔍 Common Symptoms"
+                        )
+
+                        st.write(
+                            info["symptoms"]
+                        )
+
+                with st.container(border=True):
+
+                    st.markdown(
+                        "### 🛡️ Recommended General Action"
+                    )
+
+                    st.write(
+                        info["recommendation"]
+                    )
+
+
+            # ========================================================
+            # STEP 4 - GRAD-CAM
+            # ========================================================
+
+            st.divider()
+
+            st.subheader(
+                "🔬 Step 4 — Explain This Prediction"
+            )
+
+            st.progress(
+                1.0,
+                text="Step 4 of 4 — Explainable AI"
+            )
+
+            # --------------------------------------------------------
+            # Make it explicit that Step 4 explains the Step 2 result
+            # --------------------------------------------------------
+
+            if not is_unrecognized:
+
+                disease_display_name = (
+                    formatted_name.split(" - ", 1)[-1]
+                    if " - " in formatted_name
+                    else formatted_name
+                )
+
+                st.markdown("### 🍃 Prediction Being Explained")
+
+                explain_col1, explain_col2 = st.columns(2)
+
+                with explain_col1:
+
+                    with st.container(border=True):
+
+                        st.caption("Crop")
+                        st.markdown(
+                            f"### 🌱 {formatted_name.split(' - ', 1)[0]}"
+                        )
+
+                with explain_col2:
+
+                    with st.container(border=True):
+
+                        st.caption("Crop Disease")
+                        st.markdown(
+                            f"### 🦠 {disease_display_name}"
+                        )
+
+                st.info(
+                    f"ℹ️ This section explains the Step 2 prediction: "
+                    f"**{disease_display_name}**. Grad-CAM does not make a "
+                    "new prediction or change the diagnosis."
+                )
+
+            else:
+
+                st.info(
+                    "ℹ️ Grad-CAM is unavailable because this prediction "
+                    "is currently classified as unrecognized/uncertain."
+                )
+
+            st.write(
+                "Grad-CAM highlights the image regions that contributed "
+                "more strongly to the prediction already shown in Step 2."
             )
 
             st.caption(
-                f"Top-1 vs Top-2 margin: {margin:.2f}"
+                "Red indicates stronger model influence, yellow indicates "
+                "moderate influence, and blue indicates lower influence."
             )
 
+            # --------------------------------------------------------
+            # Generate Grad-CAM button
+            # --------------------------------------------------------
 
-    # --------------------------------------------------------
-    # Decision note
-    # --------------------------------------------------------
+            if not is_unrecognized:
 
-    if is_unrecognized:
+                explain_btn = st.button(
+                    "🔬 Generate Enhanced AI Explanation",
+                    type="secondary",
+                    width="stretch",
+                    key="gradcam_button"
+                )
 
-        st.warning(
-            "Please upload a clear close-up leaf image from a "
-            "supported crop: Apple, Potato, or Tomato."
-        )
+                if explain_btn:
 
-    elif confidence_pct < 70.0:
+                    with st.spinner(
+                        "🧠 Generating AI attention map..."
+                    ):
 
-        st.info(
-            "For a more reliable result, try another clear, "
-            "well-lit close-up image of the same leaf."
-        )
+                        try:
 
-    else:
+                            # Use the exact preprocessing pipeline
+                            gradcam_input = (
+                                preprocess_single_image(
+                                    io.BytesIO(
+                                        st.session_state.analysis_image_bytes
+                                    ),
+                                    target_size=IMAGE_SIZE
+                                )
+                            )
 
-        st.caption(
-            "Supported scope: Apple, Potato, and Tomato leaf conditions."
-        )
+                            predictor = (
+                                load_leaf_predictor()
+                            )
 
+                            gradcam_data = (
+                                generate_gradcam_explanation(
+                                    predictor.model,
+                                    gradcam_input,
+                                    result[
+                                        "predicted_class_index"
+                                    ],
+                                    analysis_image
+                                )
+                            )
 
-    # ========================================================
-    # STEP 3 - UNDERSTAND RESULT
-    # ========================================================
+                            st.session_state.gradcam_image = (
+                                gradcam_data
+                            )
 
-    st.divider()
+                        except Exception as exc:
 
-    st.subheader(
-        "📖 Step 3 — Understand the Result"
-    )
+                            st.session_state.gradcam_image = None
 
-    st.progress(
-        0.75,
-        text="Step 3 of 4 — Condition information"
-    )
+                            st.warning(
+                                "Grad-CAM visualization could not "
+                                f"be generated: {exc}"
+                            )
 
-    if is_unrecognized:
+            # --------------------------------------------------------
+            # Display Enhanced Grad-CAM
+            # --------------------------------------------------------
 
-        st.info(
-            "Detailed disease information is not shown "
-            "because the image was not confidently matched "
-            "to a supported condition."
-        )
+            gradcam_data = st.session_state.gradcam_image
 
-    else:
-
-        info = DISEASE_INFO.get(
-            raw_class_name,
-            {
-                "description":
-                    "No detailed description available.",
-
-                "symptoms":
-                    "N/A",
-
-                "recommendation":
-                    "Consult a local agricultural "
-                    "extension specialist for guidance."
-            }
-        )
-
-        info_col1, info_col2 = st.columns(
-            2
-        )
-
-        with info_col1:
-
-            with st.container(border=True):
+            if isinstance(gradcam_data, dict):
 
                 st.markdown(
-                    "### 📖 Condition Overview"
+                    "### 🧠 Model Attention Visualization"
                 )
 
-                st.write(
-                    info["description"]
-                )
+                original_col, heatmap_col, overlay_col = st.columns(3)
 
-        with info_col2:
+                with original_col:
 
-            with st.container(border=True):
+                    st.image(
+                        gradcam_data["original"],
+                        caption="Original Leaf",
+                        width="stretch"
+                    )
+
+                with heatmap_col:
+
+                    st.image(
+                        gradcam_data["heatmap"],
+                        caption="AI Attention Heatmap",
+                        width="stretch"
+                    )
+
+                with overlay_col:
+
+                    st.image(
+                        gradcam_data["overlay"],
+                        caption="Grad-CAM Overlay",
+                        width="stretch"
+                    )
 
                 st.markdown(
-                    "### 🔍 Common Symptoms"
+                    "### 🧠 Where the Model Focused"
                 )
 
-                st.write(
-                    info["symptoms"]
+                st.info(
+                    gradcam_data["explanation"]
                 )
 
-        with st.container(border=True):
+                focus_col1, focus_col2 = st.columns(2)
 
-            st.markdown(
-                "### 🛡️ Recommended General Action"
-            )
+                with focus_col1:
 
-            st.write(
-                info["recommendation"]
-            )
+                    st.metric(
+                        "Primary Focus Region",
+                        gradcam_data["focus_region"]
+                    )
 
+                with focus_col2:
 
-    # ========================================================
-    # STEP 4 - GRAD-CAM
-    # ========================================================
+                    st.metric(
+                        "Attention Coverage",
+                        f"{gradcam_data['attention_coverage']:.1f}%"
+                    )
 
-    st.divider()
-
-    st.subheader(
-        "🔬 Step 4 — Explain This Prediction"
-    )
-
-    st.progress(
-        1.0,
-        text="Step 4 of 4 — Explainable AI"
-    )
-
-    # --------------------------------------------------------
-    # Make it explicit that Step 4 explains the Step 2 result
-    # --------------------------------------------------------
-
-    if not is_unrecognized:
-
-        disease_display_name = (
-            formatted_name.split(" - ", 1)[-1]
-            if " - " in formatted_name
-            else formatted_name
-        )
-
-        st.markdown("### 🍃 Prediction Being Explained")
-
-        explain_col1, explain_col2 = st.columns(2)
-
-        with explain_col1:
-
-            with st.container(border=True):
-
-                st.caption("Crop")
-                st.markdown(
-                    f"### 🌱 {formatted_name.split(' - ', 1)[0]}"
+                st.warning(
+                    "⚠️ **Interpretation Note:** Grad-CAM shows which "
+                    "image regions influenced the model's prediction. "
+                    "It does not prove that a highlighted region contains "
+                    "the disease or represent an exact disease boundary."
                 )
 
-        with explain_col2:
-
-            with st.container(border=True):
-
-                st.caption("Crop Disease")
-                st.markdown(
-                    f"### 🦠 {disease_display_name}"
-                )
-
-        st.info(
-            f"ℹ️ This section explains the Step 2 prediction: "
-            f"**{disease_display_name}**. Grad-CAM does not make a "
-            "new prediction or change the diagnosis."
-        )
-
-    else:
-
-        st.info(
-            "ℹ️ Grad-CAM is unavailable because this prediction "
-            "is currently classified as unrecognized/uncertain."
-        )
-
-    st.write(
-        "Grad-CAM highlights the image regions that contributed "
-        "more strongly to the prediction already shown in Step 2."
-    )
-
-    st.caption(
-        "Red indicates stronger model influence, yellow indicates "
-        "moderate influence, and blue indicates lower influence."
-    )
-
-    # --------------------------------------------------------
-    # Generate Grad-CAM button
-    # --------------------------------------------------------
-
-    if not is_unrecognized:
-
-        explain_btn = st.button(
-            "🔬 Generate Enhanced AI Explanation",
-            type="secondary",
-            width="stretch",
-            key="gradcam_button"
-        )
-
-        if explain_btn:
-
-            with st.spinner(
-                "🧠 Generating AI attention map..."
-            ):
-
-                try:
-
-                    # Use the exact preprocessing pipeline
-                    gradcam_input = (
-                        preprocess_single_image(
-                            io.BytesIO(
-                                st.session_state.analysis_image_bytes
-                            ),
-                            target_size=IMAGE_SIZE
-                        )
-                    )
-
-                    predictor = (
-                        load_leaf_predictor()
-                    )
-
-                    gradcam_data = (
-                        generate_gradcam_explanation(
-                            predictor.model,
-                            gradcam_input,
-                            result[
-                                "predicted_class_index"
-                            ],
-                            analysis_image
-                        )
-                    )
-
-                    st.session_state.gradcam_image = (
-                        gradcam_data
-                    )
-
-                except Exception as exc:
-
-                    st.session_state.gradcam_image = None
-
-                    st.warning(
-                        "Grad-CAM visualization could not "
-                        f"be generated: {exc}"
-                    )
-
-    # --------------------------------------------------------
-    # Display Enhanced Grad-CAM
-    # --------------------------------------------------------
-
-    gradcam_data = st.session_state.gradcam_image
-
-    if isinstance(gradcam_data, dict):
-
-        st.markdown(
-            "### 🧠 Model Attention Visualization"
-        )
-
-        original_col, heatmap_col, overlay_col = st.columns(3)
-
-        with original_col:
-
-            st.image(
-                gradcam_data["original"],
-                caption="Original Leaf",
-                width="stretch"
-            )
-
-        with heatmap_col:
-
-            st.image(
-                gradcam_data["heatmap"],
-                caption="AI Attention Heatmap",
-                width="stretch"
-            )
-
-        with overlay_col:
-
-            st.image(
-                gradcam_data["overlay"],
-                caption="Grad-CAM Overlay",
-                width="stretch"
-            )
-
-        st.markdown(
-            "### 🧠 Where the Model Focused"
-        )
-
-        st.info(
-            gradcam_data["explanation"]
-        )
-
-        focus_col1, focus_col2 = st.columns(2)
-
-        with focus_col1:
-
-            st.metric(
-                "Primary Focus Region",
-                gradcam_data["focus_region"]
-            )
-
-        with focus_col2:
-
-            st.metric(
-                "Attention Coverage",
-                f"{gradcam_data['attention_coverage']:.1f}%"
-            )
-
-        st.warning(
-            "⚠️ **Interpretation Note:** Grad-CAM shows which "
-            "image regions influenced the model's prediction. "
-            "It does not prove that a highlighted region contains "
-            "the disease or represent an exact disease boundary."
-        )
 
 
+        # ========================================================
 
-# ========================================================
 # LEAFGUARD AI ASSISTANT (NO API REQUIRED)
-# Floating chat launcher with expandable assistant panel.
-# ========================================================
+    # Floating chat launcher with expandable assistant panel.
+    # ========================================================
 
 # The chat assistant is opened from a floating circular button
 # fixed to the bottom-right corner of the browser window.
