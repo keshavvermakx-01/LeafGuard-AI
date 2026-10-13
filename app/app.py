@@ -401,6 +401,27 @@ UI_TRANSLATIONS = {
         "explainability": "Explainability",
         "visual_attention": "Visual model attention",
         "apple_potato_tomato": "Apple • Potato • Tomato",
+        "home": "Home",
+        "navigation": "Navigation",
+        "back_home": "Back to Home",
+        "home_title": "LeafGuard AI Hub",
+        "home_subtitle": "Select a module below to scan crops, view batch results, browse diseases, or check local weather.",
+        "card_scan_title": "Scan Crops",
+        "card_scan_desc": "Upload a single leaf photo for instant AI diagnosis, confidence rating, symptom analysis, and Grad-CAM visual heatmaps.",
+        "card_scan_btn": "Launch Scanner",
+        "card_batch_title": "Batch Analysis",
+        "card_batch_desc": "Upload and evaluate multiple leaf images in a single run. Includes batch disease summaries, CSV export, and PDF reports.",
+        "card_batch_btn": "Launch Batch Analysis",
+        "card_library_title": "Crop & Disease Library",
+        "card_library_desc": "Browse detailed profiles of all 17 supported Apple, Potato, and Tomato conditions with symptoms, prevention, and treatments.",
+        "card_library_btn": "Explore Library",
+        "card_history_title": "Scan History",
+        "card_history_desc": "Review recent single and batch diagnostic records from your active session, inspect confidence levels, or clear history.",
+        "card_history_btn": "View History",
+        "card_weather_title": "Weather & Crop Care",
+        "card_weather_desc": "Check real-time weather, temperature, humidity, and precipitation probability to assess environmental disease risks.",
+        "card_weather_btn": "Check Weather",
+        "library_m2_note": "Interactive disease browser with search and filters is scheduled for Milestone 2. Previewing supported crops below:",
     },
     "hi": {
         "app_name": "लीफगार्ड AI",
@@ -548,11 +569,36 @@ UI_TRANSLATIONS = {
         "explainability": "व्याख्यात्मकता",
         "visual_attention": "मॉडल का दृश्य ध्यान",
         "apple_potato_tomato": "सेब • आलू • टमाटर",
+        "home": "होम",
+        "navigation": "नेविगेशन",
+        "back_home": "होम पर वापस जाएँ",
+        "home_title": "लीफगार्ड AI हब",
+        "home_subtitle": "फसल स्कैन करने, बैच परिणाम देखने, रोग खोजने या स्थानीय मौसम जांचने के लिए नीचे दिए गए मॉड्यूल में से चुनें।",
+        "card_scan_title": "फसल स्कैन करें",
+        "card_scan_desc": "त्वरित AI निदान, भरोसा रेटिंग, लक्षण विश्लेषण और Grad-CAM हीटमैप के लिए एकल पत्ती की तस्वीर अपलोड करें।",
+        "card_scan_btn": "स्कैनर शुरू करें",
+        "card_batch_title": "बैच विश्लेषण",
+        "card_batch_desc": "एक ही बार में कई पत्तियों की छवियां अपलोड और विश्लेषण करें। बैच सारांश, CSV निर्यात और PDF रिपोर्ट शामिल हैं।",
+        "card_batch_btn": "बैच विश्लेषण शुरू करें",
+        "card_library_title": "फसल और रोग लाइब्रेरी",
+        "card_library_desc": "सेब, आलू और टमाटर की सभी 17 समर्थित स्थितियों, उनके लक्षणों, रोकथाम और उपचार विधियों को विस्तार से देखें।",
+        "card_library_btn": "लाइब्रेरी देखें",
+        "card_history_title": "स्कैन इतिहास",
+        "card_history_desc": "अपने सक्रिय सत्र के पिछले एकल और बैच निदान रिकॉर्ड देखें, विश्वास स्तर जांचें, या इतिहास साफ़ करें।",
+        "card_history_btn": "इतिहास देखें",
+        "card_weather_title": "मौसम और फसल देखभाल",
+        "card_weather_desc": "पर्यावरणीय रोग जोखिमों का आकलन करने के लिए वास्तविक समय का मौसम, तापमान, आर्द्रता और बारिश की संभावना जांचें।",
+        "card_weather_btn": "मौसम जांचें",
+        "library_m2_note": "खोज और फ़िल्टर के साथ इंटरैक्टिव रोग ब्राउज़र माइलस्टोन 2 में आ रहा है। समर्थित फसलें नीचे देखें:",
     },
 }
 
 if "ui_language" not in st.session_state:
     st.session_state.ui_language = "en"
+
+# Initialize the custom theme state before the top-right menu reads it.
+if "ui_theme" not in st.session_state:
+    st.session_state.ui_theme = "system"
 
 # Allow the browser-side native-menu language control to persist the choice
 # through a URL query parameter before the page title and translations render.
@@ -744,6 +790,12 @@ if "batch_file_signature" not in st.session_state:
 
 if "analysis_stage" not in st.session_state:
     st.session_state.analysis_stage = 1
+
+if "app_page" not in st.session_state:
+    st.session_state.app_page = "Home"
+
+if "library_search" not in st.session_state:
+    st.session_state.library_search = ""
 
 if "analysis_mode" not in st.session_state:
     st.session_state.analysis_mode = None
@@ -1432,130 +1484,120 @@ with st.sidebar:
 
 
 # ============================================================
-# ============================================================
-# TOP-RIGHT WEATHER CONTROL (STEP 1 ONLY)
-# Keep the native Streamlit ⋮ menu in the top-right toolbar.
-# LeafGuard customizes that native menu with JavaScript below.
-# ============================================================
-
-# Weather stays under the top toolbar on Step 1 only.
-_weather_spacer, _weather_top = st.columns([8.5, 1.5], gap="small")
-
-if st.session_state.analysis_stage == 1:
-    with _weather_top:
-        with st.popover(t("weather"), use_container_width=True):
-            st.markdown(t("weather_heading"))
-            st.caption(t("weather_caption"))
-
-            weather_location = st.text_input(
-                t("location"),
-                value=st.session_state.weather_location_label or "",
-                placeholder="Jammu, India",
-                key="weather_location_input",
-            )
-
-            weather_btn = st.button(
-                t("get_weather"),
-                key="weather_get_button",
-                use_container_width=True,
-            )
-
-            if weather_btn:
-                if not weather_location.strip():
-                    st.warning(t("enter_city"))
-                else:
-                    with st.spinner(t("fetching_weather")):
-                        try:
-                            st.session_state.weather_data = fetch_weather_for_location(
-                                weather_location.strip()
-                            )
-                            st.session_state.weather_location_label = weather_location.strip()
-                        except RuntimeError as exc:
-                            st.session_state.weather_data = None
-                            st.error(str(exc))
-                        except Exception as exc:
-                            st.session_state.weather_data = None
-                            st.error(f"{t('weather_lookup_failed')} {exc}")
-
-            if st.session_state.weather_data:
-                w = st.session_state.weather_data
-                st.caption(f"📍 {w.get('location', t('unknown_location'))}")
-                st.markdown(
-                    f"{t('current_condition')} {localized_weather_description(w.get('weather_code'))}"
-                )
-
-                temp_col1, temp_col2 = st.columns(2)
-                with temp_col1:
-                    temp = w.get("temperature")
-                    st.metric(
-                        t("temperature"),
-                        f"{temp:.1f} °C" if isinstance(temp, (int, float)) else "—",
-                    )
-                with temp_col2:
-                    feels = w.get("apparent_temperature")
-                    st.metric(
-                        t("feels_like"),
-                        f"{feels:.1f} °C" if isinstance(feels, (int, float)) else "—",
-                    )
-
-                temp_col3, temp_col4 = st.columns(2)
-                with temp_col3:
-                    humidity = w.get("humidity")
-                    st.metric(
-                        t("humidity"),
-                        f"{humidity:.0f}%" if isinstance(humidity, (int, float)) else "—",
-                    )
-                with temp_col4:
-                    rain_next = w.get("precipitation_probability")
-                    st.metric(
-                        t("rain_next_hour"),
-                        f"{rain_next:.0f}%" if isinstance(rain_next, (int, float)) else "—",
-                    )
-
-                st.markdown(t("detailed_conditions"))
-                detail_rows = [
-                    (t("precipitation"), f"{w['precipitation']:.1f} mm" if isinstance(w.get("precipitation"), (int, float)) else "—"),
-                    (t("wind"), f"{w['wind_speed']:.1f} km/h" if isinstance(w.get("wind_speed"), (int, float)) else "—"),
-                    (t("wind_gusts"), f"{w['wind_gusts']:.1f} km/h" if isinstance(w.get("wind_gusts"), (int, float)) else "—"),
-                    (t("cloud_cover"), f"{w['cloud_cover']:.0f}%" if isinstance(w.get("cloud_cover"), (int, float)) else "—"),
-                    (t("dew_point"), f"{w['dew_point']:.1f} °C" if isinstance(w.get("dew_point"), (int, float)) else "—"),
-                    (t("evapotranspiration"), f"{w['evapotranspiration']:.2f} mm" if isinstance(w.get("evapotranspiration"), (int, float)) else "—"),
-                    (t("vpd"), f"{w['vpd']:.2f} kPa" if isinstance(w.get("vpd"), (int, float)) else "—"),
-                ]
-                detail_left, detail_right = st.columns(2)
-                for idx, (label, value) in enumerate(detail_rows):
-                    target_col = detail_left if idx % 2 == 0 else detail_right
-                    with target_col:
-                        st.markdown(f"**{label}**  \n{value}")
-
-                st.caption(
-                    f"{t('local_weather_time')}: {w.get('time', '—')} • "
-                    f"{t('timezone')}: {w.get('timezone', '—')}"
-                )
-            else:
-                st.info(t("weather_info"))
-# 8. TOP BRAND HEADER
+# PUBLIC LEAFGUARD TOP-RIGHT MENU
+# Real Streamlit widgets keep the custom menu interactive.
+# The native Streamlit main menu is hidden so there is only ONE ⋮ control.
 # ============================================================
 
-logo_col, title_col, status_col = st.columns(
-    [0.7, 5, 1.4],
+st.markdown(
+    """
+    <style>
+      /* Hide Streamlit's native three-dot menu so LeafGuard owns this control. */
+      span[data-testid="stMainMenu"],
+      div[data-testid="stMainMenu"] {
+        display: none !important;
+      }
+
+      /* The custom menu itself is positioned by Streamlit columns below. */
+      div[data-testid="stPopoverBody"] {
+        min-width: 18rem !important;
+        max-width: 20rem !important;
+      }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# ============================================================
+# 8. TOP BRAND HEADER WITH SETTINGS MENU
+# ============================================================
+
+logo_col, title_col, status_col, settings_col = st.columns(
+    [0.7, 5.0, 1.6, 0.7],
     vertical_alignment="center"
 )
 
 with logo_col:
-
     st.markdown(
         "# 🌱"
     )
 
 with title_col:
-
     st.title(current_app_name())
-
     st.caption(t("smart_crop"))
 
 with status_col:
     st.caption(t("model_classes"))
+
+with settings_col:
+    with st.popover("⋮", use_container_width=False):
+        st.markdown("### ⚙ Settings")
+
+        # Same three theme choices users see in the standard Streamlit menu.
+        theme_options = ["System", "Light", "Dark"]
+        theme_labels = {"system": "System", "light": "Light", "dark": "Dark"}
+        current_theme_label = theme_labels.get(st.session_state.ui_theme, "System")
+        selected_theme = st.radio(
+            "Theme",
+            theme_options,
+            index=theme_options.index(current_theme_label),
+            horizontal=True,
+            label_visibility="collapsed",
+            key="leafguard_theme_choice",
+        )
+        theme_code = {"System": "system", "Light": "light", "Dark": "dark"}[selected_theme]
+        if theme_code != st.session_state.ui_theme:
+            st.session_state.ui_theme = theme_code
+            st.query_params["theme"] = theme_code
+            st.rerun()
+
+        st.divider()
+
+        if st.button("↻ Refresh", use_container_width=True, key="leafguard_menu_refresh"):
+            keep_keys = {
+                "ui_language",
+                "ui_theme",
+                "weather_location_label",
+                "app_page",
+            }
+            for _key in list(st.session_state.keys()):
+                if _key not in keep_keys:
+                    del st.session_state[_key]
+            st.rerun()
+
+        st.divider()
+
+        st.markdown(f"**🌐 {t('language')}**")
+        _language_choice = st.radio(
+            "Language",
+            ["English", "हिन्दी"],
+            index=0 if st.session_state.ui_language == "en" else 1,
+            horizontal=True,
+            label_visibility="collapsed",
+            key="leafguard_language_choice",
+        )
+        _new_lang = "en" if _language_choice == "English" else "hi"
+        if _new_lang != st.session_state.ui_language:
+            st.session_state.ui_language = _new_lang
+            st.rerun()
+
+st.write(t("app_summary"))
+
+st.divider()
+
+# ============================================================
+# TOP NAVIGATION BREADCRUMB (WHEN NOT ON HOME)
+# ============================================================
+
+if st.session_state.app_page != "Home":
+    _nav_back_col, _nav_title_col = st.columns([2.5, 7.5], vertical_alignment="center")
+    with _nav_back_col:
+        if st.button("← " + t("back_home"), key="nav_back_to_home", use_container_width=True):
+            st.session_state.app_page = "Home"
+            st.rerun()
+    with _nav_title_col:
+        st.markdown(f"🌱 **LeafGuard AI** • `{st.session_state.app_page}`")
+    st.divider()
     
 
 
@@ -2173,318 +2215,515 @@ def build_batch_pdf(batch_results, batch_image_bytes=None):
     return buffer.getvalue()
 
 # ============================================================
-# ============================================================
-# 9. STEP 1 INTRO
-# ============================================================
-
-if st.session_state.analysis_stage == 1:
-
-    st.subheader(t("step1"))
-    st.progress(
-        0.25,
-        text=t("step1_progress"),
-    )
-    st.info(t("upload_info"))
-
-
-# 10. STEP 1 - UPLOAD
+# 8B. HOME PAGE VIEW
 # ============================================================
 
-if st.session_state.analysis_stage == 1:
+if st.session_state.app_page == "Home":
 
-    single_col, batch_col = st.columns(
+    st.subheader(f"🌱 {t('home_title')}")
+    st.caption(t("home_subtitle"))
 
-        2,
-        gap="large"
-    )
+    # Five Cards in exact order:
+    # 1. Scan Crops
+    # 2. Batch Analysis
+    # 3. Crop & Disease Library
+    # 4. Scan History
+    # 5. Weather & Crop Care
 
-    # ------------------------------------------------------------
-    # SINGLE PHOTO
-    # ------------------------------------------------------------
+    row1_c1, row1_c2, row1_c3 = st.columns(3, gap="medium")
 
-    with single_col:
-
+    # 1. Scan Crops
+    with row1_c1:
         with st.container(border=True):
+            st.markdown(f"### 🔬 {t('card_scan_title')}")
+            st.write(t("card_scan_desc"))
+            if st.button(t("card_scan_btn"), key="home_card_scan", type="primary", use_container_width=True):
+                st.session_state.app_page = "Scan Crops"
+                st.rerun()
 
-            st.markdown(t("single_photo"))
-            st.caption(t("single_caption"))
+    # 2. Batch Analysis
+    with row1_c2:
+        with st.container(border=True):
+            st.markdown(f"### 📂 {t('card_batch_title')}")
+            st.write(t("card_batch_desc"))
+            if st.button(t("card_batch_btn"), key="home_card_batch", type="primary", use_container_width=True):
+                st.session_state.app_page = "Batch Analysis"
+                st.rerun()
 
-            uploaded_file = st.file_uploader(
-                t("single_uploader"),
-                type=["jpg", "jpeg", "png"],
-                key="leaf_uploader"
-            )
+    # 3. Crop & Disease Library
+    with row1_c3:
+        with st.container(border=True):
+            st.markdown(f"### 📚 {t('card_library_title')}")
+            st.write(t("card_library_desc"))
+            if st.button(t("card_library_btn"), key="home_card_library", type="primary", use_container_width=True):
+                st.session_state.app_page = "Crop & Disease Library"
+                st.rerun()
 
-            single_quality_ok = False
-            single_quality_msg = None
-            single_file_bytes = None
+    row2_c1, row2_c2 = st.columns(2, gap="medium")
 
-            if uploaded_file is not None:
+    # 4. Scan History
+    with row2_c1:
+        with st.container(border=True):
+            st.markdown(f"### 📋 {t('card_history_title')}")
+            st.write(t("card_history_desc"))
+            if st.button(t("card_history_btn"), key="home_card_history", type="secondary", use_container_width=True):
+                st.session_state.app_page = "Scan History"
+                st.rerun()
 
-                try:
+    # 5. Weather & Crop Care
+    with row2_c2:
+        with st.container(border=True):
+            st.markdown(f"### 🌦️ {t('card_weather_title')}")
+            st.write(t("card_weather_desc"))
+            if st.button(t("card_weather_btn"), key="home_card_weather", type="secondary", use_container_width=True):
+                st.session_state.app_page = "Weather & Crop Care"
+                st.rerun()
 
-                    single_file_bytes = uploaded_file.getvalue()
-                    current_file_hash = hashlib.sha256(single_file_bytes).hexdigest()
 
-                    if st.session_state.analysis_file_hash != current_file_hash:
+# ============================================================
+# CROP & DISEASE LIBRARY VIEW
+# ============================================================
 
-                        st.session_state.analysis_file_hash = current_file_hash
-                        st.session_state.analysis_result = None
-                        st.session_state.analysis_image_bytes = None
-                        st.session_state.gradcam_image = None
-                        st.session_state.chat_messages = []
-                        st.session_state.chat_open = False
-                        st.session_state.analysis_mode = None
-                        st.session_state.analysis_stage = 1
-                        st.session_state.history_single_recorded_hash = None
+elif st.session_state.app_page == "Crop & Disease Library":
 
-                    image = Image.open(
-                        io.BytesIO(single_file_bytes)
-                    ).convert("RGB")
+    st.subheader(f"📚 {t('card_library_title')}")
+    st.caption(t("library_m2_note"))
 
-                    st.image(
-                        image,
-                        caption=f"{t('uploaded_leaf')} • {uploaded_file.name}",
-                        width="stretch"
-                    )
+    lib_tabs = st.tabs([
+        "🍎 " + ("Apple" if st.session_state.ui_language == "en" else "सेब"),
+        "🥔 " + ("Potato" if st.session_state.ui_language == "en" else "आलू"),
+        "🍅 " + ("Tomato" if st.session_state.ui_language == "en" else "टमाटर")
+    ])
 
-                    single_quality_ok, single_quality_msg = check_image_quality(image)
+    with lib_tabs[0]:
+        st.markdown("### 🍎 " + ("Apple Conditions" if st.session_state.ui_language == "en" else "सेब की स्थितियाँ"))
+        for k in ["Apple___Apple_scab", "Apple___Black_rot", "Apple___Cedar_apple_rust", "Apple___healthy"]:
+            info = localized_disease_info(k, DISEASE_INFO.get(k, {}))
+            disp_name = localized_prediction_name(k)
+            with st.container(border=True):
+                st.markdown(f"#### 🌿 {disp_name}")
+                st.write(info.get("description", ""))
+                st.markdown(f"**{t('common_symptoms')}:** {info.get('symptoms', '—')}")
+                st.markdown(f"**{t('recommended_action')}:** {info.get('treatment', '—')}")
 
-                    q1, q2 = st.columns(2)
+    with lib_tabs[1]:
+        st.markdown("### 🥔 " + ("Potato Conditions" if st.session_state.ui_language == "en" else "आलू की स्थितियाँ"))
+        for k in ["Potato___Early_blight", "Potato___Late_blight", "Potato___healthy"]:
+            info = localized_disease_info(k, DISEASE_INFO.get(k, {}))
+            disp_name = localized_prediction_name(k)
+            with st.container(border=True):
+                st.markdown(f"#### 🌿 {disp_name}")
+                st.write(info.get("description", ""))
+                st.markdown(f"**{t('common_symptoms')}:** {info.get('symptoms', '—')}")
+                st.markdown(f"**{t('recommended_action')}:** {info.get('treatment', '—')}")
 
-                    with q1:
-                        st.write(
-                            f"**{t('resolution')}**  \n"
-                            f"{image.width} × {image.height}px"
-                        )
+    with lib_tabs[2]:
+        st.markdown("### 🍅 " + ("Tomato Conditions" if st.session_state.ui_language == "en" else "टमाटर की स्थितियाँ"))
+        for k in [k for k in DISEASE_INFO.keys() if k.startswith("Tomato___")]:
+            info = localized_disease_info(k, DISEASE_INFO.get(k, {}))
+            disp_name = localized_prediction_name(k)
+            with st.container(border=True):
+                st.markdown(f"#### 🌿 {disp_name}")
+                st.write(info.get("description", ""))
+                st.markdown(f"**{t('common_symptoms')}:** {info.get('symptoms', '—')}")
+                st.markdown(f"**{t('recommended_action')}:** {info.get('treatment', '—')}")
 
-                    with q2:
-                        if single_quality_ok:
-                            st.success(t("quality_passed"))
-                        else:
-                            st.warning(t("quality_issue"))
 
-                    if not single_quality_ok:
-                        st.caption(single_quality_msg)
+# ============================================================
+# WEATHER & CROP CARE VIEW
+# ============================================================
 
-                except Exception as err:
-                    st.error(t("invalid_image", err))
+elif st.session_state.app_page == "Weather & Crop Care":
 
+    st.subheader(f"🌦️ {t('card_weather_title')}")
+    st.caption(t("weather_caption"))
+
+    with st.container(border=True):
+        weather_location = st.text_input(
+            t("location"),
+            value=st.session_state.weather_location_label or "",
+            placeholder="Jammu, India",
+            key="weather_page_location_input",
+        )
+
+        weather_btn = st.button(
+            t("get_weather"),
+            key="weather_page_get_button",
+            use_container_width=True,
+        )
+
+        if weather_btn:
+            if not weather_location.strip():
+                st.warning(t("enter_city"))
             else:
-                st.caption(t("single_empty"))
+                with st.spinner(t("fetching_weather")):
+                    try:
+                        st.session_state.weather_data = fetch_weather_for_location(
+                            weather_location.strip()
+                        )
+                        st.session_state.weather_location_label = weather_location.strip()
+                    except RuntimeError as exc:
+                        st.session_state.weather_data = None
+                        st.error(str(exc))
+                    except Exception as exc:
+                        st.session_state.weather_data = None
+                        st.error(f"{t('weather_lookup_failed')} {exc}")
 
-    # ------------------------------------------------------------
-    # BATCH ANALYSIS
-    # ------------------------------------------------------------
-
-    with batch_col:
-
-        with st.container(border=True):
-
-            st.markdown(t("batch"))
-            st.caption(t("batch_caption"))
-
-            batch_files = st.file_uploader(
-                t("batch_uploader"),
-                type=["jpg", "jpeg", "png"],
-                accept_multiple_files=True,
-                key="batch_leaf_uploader"
+        if st.session_state.weather_data:
+            w = st.session_state.weather_data
+            st.caption(f"📍 {w.get('location', t('unknown_location'))}")
+            st.markdown(
+                f"{t('current_condition')} {localized_weather_description(w.get('weather_code'))}"
             )
 
-            if batch_files:
-
-                batch_signature = tuple(
-                    (file.name, len(file.getvalue()))
-                    for file in batch_files
+            temp_col1, temp_col2 = st.columns(2)
+            with temp_col1:
+                temp = w.get("temperature")
+                st.metric(
+                    t("temperature"),
+                    f"{temp:.1f} °C" if isinstance(temp, (int, float)) else "—",
+                )
+            with temp_col2:
+                feels = w.get("apparent_temperature")
+                st.metric(
+                    t("feels_like"),
+                    f"{feels:.1f} °C" if isinstance(feels, (int, float)) else "—",
                 )
 
-                if st.session_state.batch_file_signature != batch_signature:
-                    st.session_state.batch_results = []
-                    st.session_state.batch_image_bytes = {}
-                    st.session_state.batch_file_signature = batch_signature
-                    st.session_state.analysis_mode = None
-                    st.session_state.analysis_stage = 1
-                    st.session_state.history_batch_recorded_signature = None
+            temp_col3, temp_col4 = st.columns(2)
+            with temp_col3:
+                humidity = w.get("humidity")
+                st.metric(
+                    t("humidity"),
+                    f"{humidity:.0f}%" if isinstance(humidity, (int, float)) else "—",
+                )
+            with temp_col4:
+                rain_next = w.get("precipitation_probability")
+                st.metric(
+                    t("rain_next_hour"),
+                    f"{rain_next:.0f}%" if isinstance(rain_next, (int, float)) else "—",
+                )
 
-                st.info(t("selected_images", len(batch_files)))
+            st.markdown(t("detailed_conditions"))
+            detail_rows = [
+                (t("precipitation"), f"{w['precipitation']:.1f} mm" if isinstance(w.get("precipitation"), (int, float)) else "—"),
+                (t("wind"), f"{w['wind_speed']:.1f} km/h" if isinstance(w.get("wind_speed"), (int, float)) else "—"),
+                (t("wind_gusts"), f"{w['wind_gusts']:.1f} km/h" if isinstance(w.get("wind_gusts"), (int, float)) else "—"),
+                (t("cloud_cover"), f"{w['cloud_cover']:.0f}%" if isinstance(w.get("cloud_cover"), (int, float)) else "—"),
+                (t("dew_point"), f"{w['dew_point']:.1f} °C" if isinstance(w.get("dew_point"), (int, float)) else "—"),
+                (t("evapotranspiration"), f"{w['evapotranspiration']:.2f} mm" if isinstance(w.get("evapotranspiration"), (int, float)) else "—"),
+                (t("vpd"), f"{w['vpd']:.2f} kPa" if isinstance(w.get("vpd"), (int, float)) else "—"),
+            ]
+            detail_left, detail_right = st.columns(2)
+            for idx, (label, value) in enumerate(detail_rows):
+                target_col = detail_left if idx % 2 == 0 else detail_right
+                with target_col:
+                    st.markdown(f"**{label}**  \n{value}")
 
-            else:
-                st.session_state.batch_results = []
-                st.session_state.batch_image_bytes = {}
-                st.session_state.batch_file_signature = None
-                st.caption(t("batch_empty"))
+            st.caption(
+                f"{t('local_weather_time')}: {w.get('time', '—')} • "
+                f"{t('timezone')}: {w.get('timezone', '—')}"
+            )
+        else:
+            st.info(t("weather_info"))
 
-    # ------------------------------------------------------------
-    # ONE COMMON ANALYZE LEAF BUTTON
-    # ------------------------------------------------------------
 
-    st.write("")
+# ============================================================
+# 9. STEP 1 INTRO & UPLOAD (SCAN CROPS & BATCH ANALYSIS)
+# ============================================================
 
-    if uploaded_file is not None and batch_files:
-        st.warning(t("both_selected"))
+elif st.session_state.app_page in ["Scan Crops", "Batch Analysis"]:
 
-    analyze_leaf_btn = st.button(
-        t("analyze_leaf"),
-        type="primary",
-        width="stretch",
-        key="common_analyze_leaf_button"
-    )
+    uploaded_file = None
+    batch_files = None
+    single_quality_ok = True
+    single_quality_msg = None
+    single_file_bytes = None
+    current_file_hash = None
+    analyze_leaf_btn = False
 
-    if analyze_leaf_btn:
+    if st.session_state.analysis_stage == 1:
 
-        single_selected = uploaded_file is not None
-        batch_selected = bool(batch_files)
+        st.subheader(t("step1"))
+        st.progress(
+            0.25,
+            text=t("step1_progress"),
+        )
+        st.info(t("upload_info"))
 
-        if single_selected and batch_selected:
+        if st.session_state.app_page == "Scan Crops":
+            # ------------------------------------------------------------
+            # SINGLE PHOTO
+            # ------------------------------------------------------------
+            with st.container(border=True):
+                st.markdown(t("single_photo"))
+                st.caption(t("single_caption"))
 
-            st.error(t("select_one"))
+                uploaded_file = st.file_uploader(
+                    t("single_uploader"),
+                    type=["jpg", "jpeg", "png"],
+                    key="leaf_uploader"
+                )
 
-        elif single_selected:
+                single_quality_ok = False
+                single_quality_msg = None
+                single_file_bytes = None
 
-            if not single_quality_ok:
-                st.error(t("analysis_stopped"))
-
-            else:
-                with st.spinner(t("running_analysis")):
+                if uploaded_file is not None:
                     try:
-                        predictor = load_leaf_predictor()
-                        uploaded_file.seek(0)
-                        result = predictor.predict(uploaded_file)
+                        single_file_bytes = uploaded_file.getvalue()
+                        current_file_hash = hashlib.sha256(single_file_bytes).hexdigest()
 
-                        st.session_state.analysis_result = result
-                        st.session_state.analysis_image_bytes = single_file_bytes
-                        st.session_state.gradcam_image = None
-                        st.session_state.chat_messages = []
-                        st.session_state.chat_open = False
-                        st.session_state.analysis_mode = "single"
-                        st.session_state.analysis_stage = 2
+                        if st.session_state.analysis_file_hash != current_file_hash:
+                            st.session_state.analysis_file_hash = current_file_hash
+                            st.session_state.analysis_result = None
+                            st.session_state.analysis_image_bytes = None
+                            st.session_state.gradcam_image = None
+                            st.session_state.chat_messages = []
+                            st.session_state.chat_open = False
+                            st.session_state.analysis_mode = None
+                            st.session_state.analysis_stage = 1
+                            st.session_state.history_single_recorded_hash = None
 
-                        history_key = f"single:{current_file_hash}"
-                        if st.session_state.history_single_recorded_hash != history_key:
-                            _append_scan_history(
-                                _single_history_record(result, uploaded_file.name),
-                                history_key,
-                            )
-                            st.session_state.history_single_recorded_hash = history_key
-
-                        st.rerun()
-
-                    except Exception as err:
-                        st.error(t("prediction_error", err))
-
-        elif batch_selected:
-
-            predictor = load_leaf_predictor()
-            results = []
-
-            with st.spinner(t("analyzing_batch")):
-
-                for batch_file in batch_files:
-
-                    file_bytes = batch_file.getvalue()
-                    row = {
-                        "Image": batch_file.name,
-                        "Crop": "—",
-                        "Prediction": "—",
-                        "Confidence": "—",
-                        "Status": "Not analyzed",
-                        "Quality": "—",
-                    }
-
-                    try:
-                        batch_image = Image.open(
-                            io.BytesIO(file_bytes)
+                        image = Image.open(
+                            io.BytesIO(single_file_bytes)
                         ).convert("RGB")
 
-                        st.session_state.batch_image_bytes[batch_file.name] = file_bytes
-
-                        quality_ok, quality_msg = check_image_quality(batch_image)
-
-                        if not quality_ok:
-                            row["Status"] = "Quality check failed"
-                            row["Quality"] = quality_msg or "Image quality issue"
-                            results.append(row)
-                            continue
-
-                        batch_file.seek(0)
-                        prediction = predictor.predict(batch_file)
-
-                        raw_class = prediction["predicted_class_name"]
-                        confidence = float(prediction["confidence"])
-                        confidence_pct = confidence * 100.0
-
-                        formatted = (
-                            raw_class
-                            .replace("___", " - ")
-                            .replace("_", " ")
+                        st.image(
+                            image,
+                            caption=f"{t('uploaded_leaf')} • {uploaded_file.name}",
+                            width="stretch"
                         )
 
-                        crop = (
-                            formatted.split(" - ", 1)[0]
-                            if " - " in formatted
-                            else "Unknown crop"
-                        )
+                        single_quality_ok, single_quality_msg = check_image_quality(image)
 
-                        disease = (
-                            formatted.split(" - ", 1)[-1]
-                            if " - " in formatted
-                            else formatted
-                        )
+                        q1, q2 = st.columns(2)
 
-                        probabilities = sorted(
-                            [float(p) for p in prediction["all_probabilities"]],
-                            reverse=True
-                        )
+                        with q1:
+                            st.write(
+                                f"**{t('resolution')}**  \n"
+                                f"{image.width} × {image.height}px"
+                            )
 
-                        top1 = probabilities[0] if probabilities else confidence
-                        top2 = probabilities[1] if len(probabilities) > 1 else 0.0
-                        margin = top1 - top2
-                        uncertain = top1 < 0.50 or margin < 0.20
-                        healthy = "healthy" in raw_class.lower()
+                        with q2:
+                            if single_quality_ok:
+                                st.success(t("quality_passed"))
+                            else:
+                                st.warning(t("quality_issue"))
 
-                        row["Crop"] = crop
-                        row["Prediction"] = disease
-                        row["Confidence"] = f"{confidence_pct:.2f}%"
-                        row["Quality"] = "Passed"
+                        if not single_quality_ok:
+                            st.caption(single_quality_msg)
 
-                        if uncertain:
-                            row["Status"] = "Uncertain"
-                        elif healthy:
-                            row["Status"] = "No disease detected"
-                        else:
-                            row["Status"] = "Crop disease detected"
+                    except Exception as err:
+                        st.error(t("invalid_image", err))
 
-                    except Exception as exc:
-                        row["Status"] = "Analysis error"
-                        row["Quality"] = str(exc)
+                else:
+                    st.caption(t("single_empty"))
 
-                    results.append(row)
+        elif st.session_state.app_page == "Batch Analysis":
+            # ------------------------------------------------------------
+            # BATCH ANALYSIS
+            # ------------------------------------------------------------
+            with st.container(border=True):
+                st.markdown(t("batch"))
+                st.caption(t("batch_caption"))
 
-            st.session_state.batch_results = results
-            st.session_state.analysis_mode = "batch"
-            st.session_state.analysis_stage = 2
+                batch_files = st.file_uploader(
+                    t("batch_uploader"),
+                    type=["jpg", "jpeg", "png"],
+                    accept_multiple_files=True,
+                    key="batch_leaf_uploader"
+                )
 
-            if st.session_state.history_batch_recorded_signature != batch_signature:
-                batch_timestamp = datetime.now().strftime("%d %b %Y, %H:%M")
-                for batch_row in results:
-                    _append_scan_history(
-                        {
-                            "Date & Time": batch_timestamp,
-                            "Type": "Batch",
-                            "Image": batch_row.get("Image", "—"),
-                            "Crop": batch_row.get("Crop", "—"),
-                            "Prediction": batch_row.get("Prediction", "—"),
-                            "Confidence": batch_row.get("Confidence", "—"),
-                            "Status": batch_row.get("Status", "—"),
-                        },
-                        f"batch:{batch_signature}:{batch_row.get('Image', '—')}",
+                if batch_files:
+                    batch_signature = tuple(
+                        (file.name, len(file.getvalue()))
+                        for file in batch_files
                     )
-                st.session_state.history_batch_recorded_signature = batch_signature
 
-            st.rerun()
+                    if st.session_state.batch_file_signature != batch_signature:
+                        st.session_state.batch_results = []
+                        st.session_state.batch_image_bytes = {}
+                        st.session_state.batch_file_signature = batch_signature
+                        st.session_state.analysis_mode = None
+                        st.session_state.analysis_stage = 1
+                        st.session_state.history_batch_recorded_signature = None
 
-        else:
-            st.warning(t("upload_first"))
+                    st.info(t("selected_images", len(batch_files)))
+
+                else:
+                    st.session_state.batch_results = []
+                    st.session_state.batch_image_bytes = {}
+                    st.session_state.batch_file_signature = None
+                    st.caption(t("batch_empty"))
+
+        # ------------------------------------------------------------
+        # ONE COMMON ANALYZE LEAF BUTTON
+        # ------------------------------------------------------------
+        st.write("")
+
+        analyze_leaf_btn = st.button(
+            t("analyze_leaf"),
+            type="primary",
+            width="stretch",
+            key="common_analyze_leaf_button"
+        )
+
+        if analyze_leaf_btn:
+
+            single_selected = uploaded_file is not None
+            batch_selected = bool(batch_files)
+
+            if single_selected and batch_selected:
+
+                st.error(t("select_one"))
+
+            elif single_selected:
+
+                if not single_quality_ok:
+                    st.error(t("analysis_stopped"))
+
+                else:
+                    with st.spinner(t("running_analysis")):
+                        try:
+                            predictor = load_leaf_predictor()
+                            uploaded_file.seek(0)
+                            result = predictor.predict(uploaded_file)
+
+                            st.session_state.analysis_result = result
+                            st.session_state.analysis_image_bytes = single_file_bytes
+                            st.session_state.gradcam_image = None
+                            st.session_state.chat_messages = []
+                            st.session_state.chat_open = False
+                            st.session_state.analysis_mode = "single"
+                            st.session_state.analysis_stage = 2
+
+                            history_key = f"single:{current_file_hash}"
+                            if st.session_state.history_single_recorded_hash != history_key:
+                                _append_scan_history(
+                                    _single_history_record(result, uploaded_file.name),
+                                    history_key,
+                                )
+                                st.session_state.history_single_recorded_hash = history_key
+
+                            st.rerun()
+
+                        except Exception as err:
+                            st.error(t("prediction_error", err))
+
+            elif batch_selected:
+
+                predictor = load_leaf_predictor()
+                results = []
+
+                with st.spinner(t("analyzing_batch")):
+
+                    for batch_file in batch_files:
+
+                        file_bytes = batch_file.getvalue()
+                        row = {
+                            "Image": batch_file.name,
+                            "Crop": "—",
+                            "Prediction": "—",
+                            "Confidence": "—",
+                            "Status": "Not analyzed",
+                            "Quality": "—",
+                        }
+
+                        try:
+                            batch_image = Image.open(
+                                io.BytesIO(file_bytes)
+                            ).convert("RGB")
+
+                            st.session_state.batch_image_bytes[batch_file.name] = file_bytes
+
+                            quality_ok, quality_msg = check_image_quality(batch_image)
+
+                            if not quality_ok:
+                                row["Status"] = "Quality check failed"
+                                row["Quality"] = quality_msg or "Image quality issue"
+                                results.append(row)
+                                continue
+
+                            batch_file.seek(0)
+                            prediction = predictor.predict(batch_file)
+
+                            raw_class = prediction["predicted_class_name"]
+                            confidence = float(prediction["confidence"])
+                            confidence_pct = confidence * 100.0
+
+                            formatted = (
+                                raw_class
+                                .replace("___", " - ")
+                                .replace("_", " ")
+                            )
+
+                            crop = (
+                                formatted.split(" - ", 1)[0]
+                                if " - " in formatted
+                                else "Unknown crop"
+                            )
+
+                            disease = (
+                                formatted.split(" - ", 1)[-1]
+                                if " - " in formatted
+                                else formatted
+                            )
+
+                            probabilities = sorted(
+                                [float(p) for p in prediction["all_probabilities"]],
+                                reverse=True
+                            )
+
+                            top1 = probabilities[0] if probabilities else confidence
+                            top2 = probabilities[1] if len(probabilities) > 1 else 0.0
+                            margin = top1 - top2
+                            uncertain = top1 < 0.50 or margin < 0.20
+                            healthy = "healthy" in raw_class.lower()
+
+                            row["Crop"] = crop
+                            row["Prediction"] = disease
+                            row["Confidence"] = f"{confidence_pct:.2f}%"
+                            row["Quality"] = "Passed"
+
+                            if uncertain:
+                                row["Status"] = "Uncertain"
+                            elif healthy:
+                                row["Status"] = "No disease detected"
+                            else:
+                                row["Status"] = "Crop disease detected"
+
+                        except Exception as exc:
+                            row["Status"] = "Analysis error"
+                            row["Quality"] = str(exc)
+
+                        results.append(row)
+
+                st.session_state.batch_results = results
+                st.session_state.analysis_mode = "batch"
+                st.session_state.analysis_stage = 2
+
+                if st.session_state.history_batch_recorded_signature != batch_signature:
+                    batch_timestamp = datetime.now().strftime("%d %b %Y, %H:%M")
+                    for batch_row in results:
+                        _append_scan_history(
+                            {
+                                "Date & Time": batch_timestamp,
+                                "Type": "Batch",
+                                "Image": batch_row.get("Image", "—"),
+                                "Crop": batch_row.get("Crop", "—"),
+                                "Prediction": batch_row.get("Prediction", "—"),
+                                "Confidence": batch_row.get("Confidence", "—"),
+                                "Status": batch_row.get("Status", "—"),
+                            },
+                            f"batch:{batch_signature}:{batch_row.get('Image', '—')}",
+                        )
+                    st.session_state.history_batch_recorded_signature = batch_signature
+
+                st.rerun()
+
+            else:
+                st.warning(t("upload_first"))
 
 
 # ============================================================
@@ -2492,7 +2731,7 @@ if st.session_state.analysis_stage == 1:
 #     Appears on the next screen after Step 1 analysis.
 # ============================================================
 
-if st.session_state.analysis_stage == 2:
+if st.session_state.analysis_stage == 2 and st.session_state.app_page in ["Scan Crops", "Batch Analysis"]:
 
     if st.button(t("back"), key="new_analysis_button"):
         st.session_state.analysis_stage = 1
@@ -3027,7 +3266,8 @@ if st.session_state.analysis_stage == 2:
 # Single-image PDF report
 # --------------------------------------------------------
 if (
-    st.session_state.analysis_stage == 2
+    st.session_state.app_page == "Scan Crops"
+    and st.session_state.analysis_stage == 2
     and st.session_state.analysis_mode == "single"
     and st.session_state.analysis_result is not None
     and st.session_state.analysis_image_bytes is not None
@@ -3544,267 +3784,63 @@ if st.session_state.chat_open:
             st.rerun()
 
 
-# --------------------------------------------------------
-# Customize Streamlit's native top-right ⋮ menu
-# Keep the built-in System / Light / Dark theme selector, while replacing
-# developer/viewer actions with LeafGuard's Refresh and Language controls.
-# Streamlit 1.64 provides st.html(..., unsafe_allow_javascript=True), which
-# lets us adapt the already-rendered native menu without adding a second menu.
-# --------------------------------------------------------
-st.html(
-    r"""
-    <style>
-      /* Keep Streamlit's native theme selector, but make the LeafGuard
-         menu contain only Refresh + Language underneath it. */
-      .leafguard-native-menu-item {
-        width: 100%;
-        box-sizing: border-box;
-        border: 0;
-        background: transparent;
-        color: inherit;
-        text-align: left;
-        padding: 0.55rem 0.75rem;
-        border-radius: 0.35rem;
-        cursor: pointer;
-        font: inherit;
-        display: block;
-      }
-      .leafguard-native-menu-item:hover {
-        background: rgba(128, 128, 128, 0.16);
-      }
-      .leafguard-native-menu-divider {
-        border-top: 1px solid rgba(128,128,128,0.24);
-        margin: 0.35rem 0;
-      }
-      .leafguard-language-panel {
-        display: none;
-        gap: 0.35rem;
-        padding: 0.15rem 0.5rem 0.55rem 0.5rem;
-      }
-      .leafguard-language-panel button {
-        flex: 1;
-        border: 1px solid rgba(128,128,128,0.28);
-        background: transparent;
-        color: inherit;
-        border-radius: 0.35rem;
-        padding: 0.4rem 0.5rem;
-        cursor: pointer;
-        font: inherit;
-      }
-      .leafguard-language-panel button:hover {
-        background: rgba(128,128,128,0.16);
-      }
-    </style>
-    <script>
-    (() => {
-      const HIDDEN = [
-        "Rerun", "Auto rerun", "Clear cache", "Print", "Record screen",
-        "Made with Streamlit"
-      ];
-
-      function clean(text) {
-        return (text || "").replace(/\s+/g, " ").trim();
-      }
-
-      function isHiddenLabel(label) {
-        return HIDDEN.some((x) => label === x || label.startsWith(x + " "));
-      }
-
-      function findNativeMenu() {
-        const candidates = [
-          ...document.querySelectorAll('[role="menu"]'),
-          ...document.querySelectorAll('[data-baseweb="menu"]'),
-          ...document.querySelectorAll('[role="listbox"]')
-        ];
-        const withStreamlitActions = candidates.find((menu) => {
-          const txt = clean(menu.innerText);
-          return txt.includes("System") && (txt.includes("Print") || txt.includes("Record screen"));
-        });
-        if (withStreamlitActions) return withStreamlitActions;
-
-        /* Fallback: find a visible element containing the native action text. */
-        const action = [...document.querySelectorAll("button, [role='menuitem'], li, div")]
-          .find((el) => {
-            const txt = clean(el.innerText);
-            const rect = el.getBoundingClientRect();
-            return rect.width > 0 && rect.height > 0 && (txt === "Print" || txt.startsWith("Record screen"));
-          });
-        if (!action) return null;
-        return action.closest('[role="menu"]')
-          || action.closest('[data-baseweb="menu"]')
-          || action.closest('[role="listbox"]')
-          || action.parentElement?.parentElement
-          || null;
-      }
-
-      function makeButton(label, title) {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = "leafguard-native-menu-item";
-        b.textContent = label;
-        if (title) b.title = title;
-        return b;
-      }
-
-      function setLanguage(code) {
-        const url = new URL(window.location.href);
-        url.searchParams.set("lang", code);
-        window.location.assign(url.toString());
-      }
-
-      function customize() {
-        const menu = findNativeMenu();
-        if (!menu) return;
-
-        /* Streamlit can recreate the menu every time it opens. Use a marker
-           on the actual menu element so each instance is customized once. */
-        if (menu.dataset.leafguardCustomized === "1") return;
-
-        const descendants = [...menu.querySelectorAll("button, [role='menuitem'], li, div")];
-        descendants.forEach((el) => {
-          const label = clean(el.innerText);
-          if (!label) return;
-          if (isHiddenLabel(label)) {
-            el.style.display = "none";
-          }
-        });
-
-        const divider = document.createElement("div");
-        divider.className = "leafguard-native-menu-divider";
-
-        const refresh = makeButton("↻ Refresh", "Refresh the full LeafGuard page");
-        refresh.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          window.location.reload();
-        });
-
-        const language = makeButton("🌐 Language", "Choose LeafGuard interface language");
-        const panel = document.createElement("div");
-        panel.className = "leafguard-language-panel";
-        panel.style.display = "none";
-
-        const english = makeButton("English");
-        const hindi = makeButton("हिन्दी");
-        english.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          setLanguage("en");
-        });
-        hindi.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          setLanguage("hi");
-        });
-        panel.append(english, hindi);
-
-        language.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          panel.style.display = panel.style.display === "flex" ? "none" : "flex";
-        });
-
-        /* All unwanted native actions are hidden, so appending these places
-           the LeafGuard controls immediately below System/Light/Dark. */
-        menu.append(divider, refresh, language, panel);
-        menu.dataset.leafguardCustomized = "1";
-      }
-
-      function scheduleCustomize() {
-        customize();
-        setTimeout(customize, 50);
-        setTimeout(customize, 200);
-        setTimeout(customize, 600);
-      }
-
-      const observer = new MutationObserver(scheduleCustomize);
-      observer.observe(document.documentElement, { childList: true, subtree: true });
-      document.addEventListener("click", () => setTimeout(customize, 30), true);
-      setTimeout(scheduleCustomize, 250);
-      setTimeout(scheduleCustomize, 800);
-      setTimeout(scheduleCustomize, 1600);
-      setInterval(customize, 1200);
-    })();
-    </script>
-    """,
-    unsafe_allow_javascript=True,
-)
-
-# --------------------------------------------------------
-# Clear Back button styling
-# --------------------------------------------------------
-st.markdown(
-    """
-    <style>
-    .st-key-new_analysis_button button {
-        min-width: 105px !important;
-        min-height: 42px !important;
-        border-radius: 10px !important;
-        font-weight: 700 !important;
-        padding: 0.35rem 0.9rem !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
 # ============================================================
 # 12. SCAN HISTORY
 # Session-only history of completed analyses.
 # ============================================================
 
-st.divider()
-st.subheader(t("history_title"))
-st.caption(t("history_caption"))
+if st.session_state.app_page == "Scan History":
 
-if st.session_state.scan_history:
+    st.subheader(t("history_title"))
+    st.caption(t("history_caption"))
 
-    history_view = []
-    status_hi = {
-        "Crop disease detected": "फसल रोग पाया गया",
-        "No disease detected": "कोई रोग नहीं मिला",
-        "Uncertain": "अनिश्चित",
-        "Not analyzed": "विश्लेषण नहीं हुआ",
-        "Quality check failed": "गुणवत्ता जांच विफल",
-        "Analysis error": "विश्लेषण त्रुटि",
-    }
-    type_hi = {"Single": "एकल", "Batch": "बैच"}
-    for item in reversed(st.session_state.scan_history):
-        status_value = item.get("Status", "—")
-        type_value = item.get("Type", "—")
-        history_view.append(
-            {
-                t("history_date"): item.get("Date & Time", "—"),
-                t("history_type"): type_hi.get(type_value, type_value) if st.session_state.ui_language == "hi" else type_value,
-                t("history_image"): item.get("Image", "—"),
-                t("crop"): ( {"Apple": "सेब", "Potato": "आलू", "Tomato": "टमाटर"}.get(item.get("Crop"), item.get("Crop", "—")) if st.session_state.ui_language == "hi" else item.get("Crop", "—") ),
-                t("history_prediction"): (DISEASE_NAME_HI.get(item.get("Prediction"), item.get("Prediction", "—")) if st.session_state.ui_language == "hi" else item.get("Prediction", "—")),
-                t("history_confidence"): item.get("Confidence", "—"),
-                t("history_status"): status_hi.get(status_value, status_value) if st.session_state.ui_language == "hi" else status_value,
-            }
-        )
+    if st.session_state.scan_history:
 
-    history_col1, history_col2 = st.columns([5, 1])
+        history_view = []
+        status_hi = {
+            "Crop disease detected": "फसल रोग पाया गया",
+            "No disease detected": "कोई रोग नहीं मिला",
+            "Uncertain": "अनिश्चित",
+            "Not analyzed": "विश्लेषण नहीं हुआ",
+            "Quality check failed": "गुणवत्ता जांच विफल",
+            "Analysis error": "विश्लेषण त्रुटि",
+        }
+        type_hi = {"Single": "एकल", "Batch": "बैच"}
+        for item in reversed(st.session_state.scan_history):
+            status_value = item.get("Status", "—")
+            type_value = item.get("Type", "—")
+            history_view.append(
+                {
+                    t("history_date"): item.get("Date & Time", "—"),
+                    t("history_type"): type_hi.get(type_value, type_value) if st.session_state.ui_language == "hi" else type_value,
+                    t("history_image"): item.get("Image", "—"),
+                    t("crop"): ( {"Apple": "सेब", "Potato": "आलू", "Tomato": "टमाटर"}.get(item.get("Crop"), item.get("Crop", "—")) if st.session_state.ui_language == "hi" else item.get("Crop", "—") ),
+                    t("history_prediction"): (DISEASE_NAME_HI.get(item.get("Prediction"), item.get("Prediction", "—")) if st.session_state.ui_language == "hi" else item.get("Prediction", "—")),
+                    t("history_confidence"): item.get("Confidence", "—"),
+                    t("history_status"): status_hi.get(status_value, status_value) if st.session_state.ui_language == "hi" else status_value,
+                }
+            )
 
-    with history_col1:
-        st.dataframe(
-            history_view,
-            width="stretch",
-            hide_index=True,
-        )
+        history_col1, history_col2 = st.columns([5, 1])
 
-    with history_col2:
-        st.write("")
-        st.write("")
-        if st.button(t("clear_history"), key="clear_scan_history", width="stretch"):
-            st.session_state.scan_history = []
-            st.session_state.history_single_recorded_hash = None
-            st.session_state.history_batch_recorded_signature = None
-            st.rerun()
+        with history_col1:
+            st.dataframe(
+                history_view,
+                width="stretch",
+                hide_index=True,
+            )
 
-else:
-    st.info(t("no_scans"))
+        with history_col2:
+            st.write("")
+            st.write("")
+            if st.button(t("clear_history"), key="clear_scan_history", width="stretch"):
+                st.session_state.scan_history = []
+                st.session_state.history_single_recorded_hash = None
+                st.session_state.history_batch_recorded_signature = None
+                st.rerun()
+
+    else:
+        st.info(t("no_scans"))
 
 
 
