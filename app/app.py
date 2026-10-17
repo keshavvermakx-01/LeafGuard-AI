@@ -46,6 +46,7 @@ from datetime import datetime
 from src.config import IMAGE_SIZE
 from src.predict import LeafDiseasePredictor
 from src.preprocessing import preprocess_single_image
+from supabase_account import render_auth_gate
 
 @st.cache_resource(show_spinner=False)
 def load_leaf_predictor():
@@ -755,6 +756,9 @@ st.set_page_config(
 )
 
 
+
+
+
 # ============================================================
 # STREAMLIT SESSION STATE
 # ============================================================
@@ -793,6 +797,13 @@ if "analysis_stage" not in st.session_state:
 
 if "app_page" not in st.session_state:
     st.session_state.app_page = "Home"
+
+render_auth_gate()
+
+if st.session_state.get("lg_demo_mode") and st.session_state.get("app_page") == "Scan History":
+    st.session_state.app_page = "Home"
+    st.warning("Scan History requires signing in. You can continue exploring the public demo.")
+
 
 if "library_search" not in st.session_state:
     st.session_state.library_search = ""
