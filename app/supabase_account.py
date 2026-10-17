@@ -56,7 +56,7 @@ def render_auth_gate() -> None:
             st.rerun()
         return
 
-    @st.dialog("LeafGuard AI ÔÇö Sign in or create account", width="small")
+    @st.dialog("LeafGuard AI - Sign in or create account", width="small")
     def _auth_dialog():
         close_col, _ = st.columns([1, 8])
         with close_col:
@@ -169,5 +169,6 @@ def download_my_pdf(object_path: str) -> bytes:
         raise PermissionError("You can only download your own reports.")
     bucket = str(st.secrets.get("supabase", {}).get("storage_bucket", "leafguard-reports"))
     return _authed_client().storage.from_(bucket).download(object_path)
+
 
 
