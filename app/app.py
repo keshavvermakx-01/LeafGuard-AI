@@ -601,6 +601,52 @@ if "ui_language" not in st.session_state:
 if "ui_theme" not in st.session_state:
     st.session_state.ui_theme = "system"
 
+# Apply the selected appearance to the main Streamlit page.
+_theme_choice = st.session_state.get("ui_theme", "system")
+if _theme_choice == "system":
+    _theme_choice = "dark"
+
+if _theme_choice in {"light", "dark"}:
+    _theme_bg = "#ffffff" if _theme_choice == "light" else "#0e1117"
+    _theme_text = "#172033" if _theme_choice == "light" else "#fafafa"
+    _theme_border = "#d1d5db" if _theme_choice == "light" else "#374151"
+
+    st.markdown(
+        f"""
+        <style>
+        .stApp,
+        [data-testid="stAppViewContainer"] {{
+            background-color: {_theme_bg} !important;
+            color: {_theme_text} !important;
+        }}
+
+        [data-testid="stHeader"] {{
+            background-color: {_theme_bg} !important;
+        }}
+
+        [data-testid="stSidebar"] {{
+            background-color: {_theme_bg} !important;
+        }}
+
+        .stApp p,
+        .stApp label,
+        .stApp h1,
+        .stApp h2,
+        .stApp h3,
+        .stApp h4,
+        .stApp li,
+        .stApp [data-testid="stCaptionContainer"] {{
+            color: {_theme_text};
+        }}
+
+        .stApp hr {{
+            border-color: {_theme_border};
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 # Allow the browser-side native-menu language control to persist the choice
 # through a URL query parameter before the page title and translations render.
 _requested_language = st.query_params.get("lang")
