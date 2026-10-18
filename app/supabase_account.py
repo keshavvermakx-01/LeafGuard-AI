@@ -56,10 +56,10 @@ def render_auth_gate() -> None:
             st.rerun()
         return
 
-    @st.dialog("LeafGuard AI - Sign in or create account", width="small")
+    @st.dialog("LeafGuard AI - Sign in or create account", width="small", on_dismiss=lambda: st.session_state.update({"lg_auth_open": False, "lg_demo_mode": True}))
     def _auth_dialog():
-     
         st.markdown("""
+        
         <div style="text-align:center;margin:.2rem 0">
           <svg viewBox="0 0 64 64" width="48" height="48" aria-label="LeafGuard leaf logo">
             <path d="M53 9C31 9 13 18 12 36c0 10 7 17 17 16C47 50 54 30 53 9Z" fill="#2E8B57"/>
