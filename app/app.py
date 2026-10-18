@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 from pathlib import Path
 import hashlib
 import io
@@ -1612,9 +1612,7 @@ if st.session_state.app_page != "Home":
     
 
 
-st.write(t("app_summary"))
 
-st.divider()
 
 
 # ============================================================
