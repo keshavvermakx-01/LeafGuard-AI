@@ -642,6 +642,55 @@ if _theme_choice in {"light", "dark"}:
         .stApp hr {{
             border-color: {_theme_border};
         }}
+	.stApp [data-testid="stBaseButton-secondary"] {{
+    	background-color: {_theme_bg} !important;
+   	 color: {_theme_text} !important;
+    	border: 1px solid {_theme_border} !important;
+	}}
+	/* Match file uploader to the selected theme */
+
+        /* Match file uploader to the selected theme */
+        .stApp [data-testid="stFileUploader"] section,
+        .stApp [data-testid="stFileUploader"] section > div {{
+            background-color: {_theme_bg} !important;
+            color: {_theme_text} !important;
+        }}
+
+        /* Style file uploader borders and drop area */
+        .stApp [data-testid="stFileUploader"] section {{
+            border: 1px solid {_theme_border} !important;
+        }}
+
+        /* Improve text visibility inside uploader */
+        .stApp [data-testid="stFileUploader"] small,
+        .stApp [data-testid="stFileUploader"] span,
+        .stApp [data-testid="stFileUploader"] label {{
+            color: {_theme_text} !important;
+        }}
+	        /* Match select boxes and dropdown controls to the theme */
+        .stApp [data-baseweb="select"] > div {{
+            background-color: {_theme_bg} !important;
+            color: {_theme_text} !important;
+            border-color: {_theme_border} !important;
+        }}
+
+        .stApp [data-baseweb="select"] div,
+        .stApp [data-baseweb="select"] span {{
+            color: {_theme_text} !important;
+        }}
+	/* Theme the three-dot settings popover */
+.stApp [data-testid="stPopover"] > button,
+.stApp [data-testid="stPopover"] button {{
+    background-color: {_theme_bg} !important;
+    color: {_theme_text} !important;
+    border: 1px solid {_theme_border} !important;
+}}
+
+/* Keep the popover icon visible */
+.stApp [data-testid="stPopover"] button svg {{
+    color: {_theme_text} !important;
+    fill: {_theme_text} !important;
+}}
         </style>
         """,
         unsafe_allow_html=True,
@@ -1653,10 +1702,11 @@ if st.session_state.app_page != "Home":
             st.session_state.app_page = "Home"
             st.rerun()
     with _nav_title_col:
-        st.markdown(f"🌱 **LeafGuard AI** • `{st.session_state.app_page}`")
+        st.markdown(
+            f"""🌱 **LeafGuard AI** • <span style="background-color:{_theme_bg}; color:{_theme_text}; border:1px solid {_theme_border}; padding:2px 6px; border-radius:4px;">{st.session_state.app_page}</span>""",
+            unsafe_allow_html=True,
+        )
     st.divider()
-    
-
 
 
 
