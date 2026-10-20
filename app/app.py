@@ -423,6 +423,12 @@ UI_TRANSLATIONS = {
         "card_weather_desc": "Check real-time weather, temperature, humidity, and precipitation probability to assess environmental disease risks.",
         "card_weather_btn": "Check Weather",
         "library_m2_note": "Interactive disease browser with search and filters is scheduled for Milestone 2. Previewing supported crops below:",
+        "nav_heading": "NAVIGATION",
+        "ai_assistant_badge": "AI Crop Assistant",
+        "ai_assistant_card_title": "AI Crop Assistant",
+        "ai_assistant_card_desc": "Ask questions about crop diseases, symptoms & treatments.",
+        "ai_assistant_card_btn": "Ask Assistant",
+        "about_leafguard": "About LeafGuard AI",
     },
     "hi": {
         "app_name": "लीफगार्ड AI",
@@ -591,6 +597,12 @@ UI_TRANSLATIONS = {
         "card_weather_desc": "पर्यावरणीय रोग जोखिमों का आकलन करने के लिए वास्तविक समय का मौसम, तापमान, आर्द्रता और बारिश की संभावना जांचें।",
         "card_weather_btn": "मौसम जांचें",
         "library_m2_note": "खोज और फ़िल्टर के साथ इंटरैक्टिव रोग ब्राउज़र माइलस्टोन 2 में आ रहा है। समर्थित फसलें नीचे देखें:",
+        "nav_heading": "नेविगेशन",
+        "ai_assistant_badge": "AI फसल सहायक",
+        "ai_assistant_card_title": "AI फसल सहायक",
+        "ai_assistant_card_desc": "फसल रोगों, लक्षणों और उपचार के बारे में प्रश्न पूछें।",
+        "ai_assistant_card_btn": "सहायक से पूछें",
+        "about_leafguard": "लीफगार्ड AI के बारे में",
     },
 }
 
@@ -611,6 +623,53 @@ if _theme_choice in {"light", "dark"}:
     _theme_text = "#172033" if _theme_choice == "light" else "#fafafa"
     _theme_border = "#d1d5db" if _theme_choice == "light" else "#374151"
 
+    # Theme-aware Sidebar Design Tokens (Dark Charcoal/Black in dark mode, Clean Slate in light mode)
+    _sb_bg = "#f8fafc" if _theme_choice == "light" else "#0e1117"
+    _sb_gradient = (
+        "linear-gradient(180deg, #f8fafc 0%, #edf0f5 100%)"
+        if _theme_choice == "light"
+        else "linear-gradient(180deg, #11151c 0%, #0b0e13 100%)"
+    )
+    _sb_border = "#e2e8f0" if _theme_choice == "light" else "#1f2937"
+    _sb_title = "#0f172a" if _theme_choice == "light" else "#f8fafc"
+    _sb_subtitle = "#64748b" if _theme_choice == "light" else "#94a3b8"
+    _sb_nav_heading = "#64748b" if _theme_choice == "light" else "#94a3b8"
+    _sb_text = "#334155" if _theme_choice == "light" else "#cbd5e1"
+    _sb_muted = "#64748b" if _theme_choice == "light" else "#94a3b8"
+    _sb_divider = "#e2e8f0" if _theme_choice == "light" else "#1f2937"
+
+    # Inactive navigation item surfaces
+    _sb_btn_bg = "#ffffff" if _theme_choice == "light" else "rgba(255, 255, 255, 0.03)"
+    _sb_btn_border = "#e2e8f0" if _theme_choice == "light" else "rgba(255, 255, 255, 0.07)"
+    _sb_btn_text = "#334155" if _theme_choice == "light" else "#cbd5e1"
+    _sb_btn_hover_bg = "#f1f5f9" if _theme_choice == "light" else "rgba(255, 255, 255, 0.07)"
+    _sb_btn_hover_border = "#cbd5e1" if _theme_choice == "light" else "rgba(255, 255, 255, 0.14)"
+    _sb_btn_hover_text = "#0f172a" if _theme_choice == "light" else "#ffffff"
+
+    # Active navigation item (Restrained soft-green accent)
+    _sb_active_bg = (
+        "linear-gradient(90deg, rgba(34, 197, 94, 0.12) 0%, rgba(22, 163, 74, 0.08) 100%)"
+        if _theme_choice == "light"
+        else "linear-gradient(90deg, rgba(34, 197, 94, 0.14) 0%, rgba(22, 163, 74, 0.09) 100%)"
+    )
+    _sb_active_border = "#16a34a" if _theme_choice == "light" else "#22c55e"
+    _sb_active_text = "#15803d" if _theme_choice == "light" else "#ffffff"
+    _sb_active_glow = (
+        "0 0 10px rgba(22, 163, 74, 0.12)"
+        if _theme_choice == "light"
+        else "0 0 12px rgba(34, 197, 94, 0.16)"
+    )
+
+    # AI Crop Assistant Card
+    _sb_card_bg = "#ffffff" if _theme_choice == "light" else "#151b23"
+    _sb_card_border = "#e2e8f0" if _theme_choice == "light" else "#283344"
+    _sb_card_title = "#0f172a" if _theme_choice == "light" else "#f8fafc"
+    _sb_card_desc = "#64748b" if _theme_choice == "light" else "#94a3b8"
+
+    # Auth box & Expander
+    _sb_alert_bg = "rgba(0, 0, 0, 0.03)" if _theme_choice == "light" else "rgba(255, 255, 255, 0.03)"
+    _sb_alert_border = "#e2e8f0" if _theme_choice == "light" else "#283344"
+
     st.markdown(
         f"""
         <style>
@@ -624,8 +683,287 @@ if _theme_choice in {"light", "dark"}:
             background-color: {_theme_bg} !important;
         }}
 
+        /* Responsive 280px Desktop Sidebar Width & Smooth Collapsing Behavior */
+        @media (min-width: 768px) {{
+            [data-testid="stSidebar"]:not([aria-expanded="false"]) {{
+                width: 300px !important;
+                min-width: 300px !important;
+                max-width: 300px !important;
+            }}
+            [data-testid="stSidebar"]:not([aria-expanded="false"]) > div:first-child {{
+                width: 300px !important;
+                min-width: 300px !important;
+                max-width: 300px !important;
+            }}
+        }}
+
+        /* Responsive Mobile Drawer (< 768px) */
+        @media (max-width: 767px) {{
+            [data-testid="stSidebar"]:not([aria-expanded="false"]) {{
+                width: calc(100vw - 3rem) !important;
+                max-width: 320px !important;
+            }}
+        }}
+
+        /* Theme-Aware Dark Charcoal / Light Sidebar */
+        [data-testid="stSidebar"],
+        [data-testid="stSidebar"] > div:first-child,
+        [data-testid="stSidebarContent"] {{
+            background: {_sb_gradient} !important;
+            background-color: {_sb_bg} !important;
+        }}
+
         [data-testid="stSidebar"] {{
-            background-color: {_theme_bg} !important;
+            border-right: 1px solid {_sb_border} !important;
+            box-shadow: 2px 0 16px rgba(0, 0, 0, 0.35) !important;
+        }}
+
+        /* Optimized inner padding for 280px width */
+        [data-testid="stSidebarContent"] {{
+            padding-left: 14px !important;
+            padding-right: 14px !important;
+            padding-top: 10px !important;
+        }}
+
+        /* Scoped typography inside sidebar */
+        [data-testid="stSidebar"] p,
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] span,
+        [data-testid="stSidebar"] div,
+        [data-testid="stSidebar"] li {{
+            color: {_sb_text};
+        }}
+
+        [data-testid="stSidebar"] h1,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3,
+        [data-testid="stSidebar"] h4 {{
+            color: {_sb_title} !important;
+        }}
+
+        [data-testid="stSidebar"] [data-testid="stCaptionContainer"],
+        [data-testid="stSidebar"] small {{
+            color: {_sb_muted} !important;
+        }}
+
+        [data-testid="stSidebar"] hr {{
+            border-color: {_sb_divider} !important;
+            margin: 8px 0 12px 0 !important;
+        }}
+
+        /* Sidebar Collapse / Arrow icon */
+        [data-testid="stSidebarCollapseButton"] button,
+        [data-testid="stSidebarHeader"] button {{
+            color: {_sb_muted} !important;
+            background: transparent !important;
+        }}
+        [data-testid="stSidebarCollapseButton"] button:hover,
+        [data-testid="stSidebarHeader"] button:hover {{
+            color: {_sb_title} !important;
+            background: {_sb_btn_hover_bg} !important;
+        }}
+
+        /* Brand & Section Headings */
+        .leafguard-sb-title {{
+            font-size: 1.18rem !important;
+            font-weight: 700 !important;
+            color: {_sb_title} !important;
+            letter-spacing: -0.02em !important;
+            line-height: 1.15 !important;
+        }}
+
+        .leafguard-sb-sub {{
+            font-size: 0.72rem !important;
+            color: {_sb_subtitle} !important;
+            font-weight: 500 !important;
+            margin-top: 2px !important;
+            line-height: 1.25 !important;
+        }}
+
+        .leafguard-sb-nav-heading {{
+            font-size: 0.67rem !important;
+            font-weight: 700 !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.08em !important;
+            color: {_sb_nav_heading} !important;
+            opacity: 0.8 !important;
+            margin: 0 0 6px 3px !important;
+        }}
+
+        /* Sidebar Navigation Item Container & Base Button */
+        [data-testid="stSidebar"] div[class*="st-key-sb_nav_"] {{
+            margin-bottom: 5px !important;
+        }}
+
+        [data-testid="stSidebar"] div[class*="st-key-sb_nav_"] button {{
+            width: 100% !important;
+            text-align: left !important;
+            justify-content: flex-start !important;
+            padding: 8px 11px !important;
+            border-radius: 9px !important;
+            font-size: 0.90rem !important;
+            font-weight: 500 !important;
+            letter-spacing: -0.01em !important;
+            transition: all 0.18s ease-in-out !important;
+            display: flex !important;
+            align-items: center !important;
+            gap: 8px !important;
+        }}
+
+        /* Inactive Navigation Item */
+        [data-testid="stSidebar"] div[class*="st-key-sb_nav_"] [data-testid="stBaseButton-secondary"] {{
+            background-color: {_sb_btn_bg} !important;
+            color: {_sb_btn_text} !important;
+            border: 1px solid {_sb_btn_border} !important;
+            box-shadow: none !important;
+        }}
+
+        [data-testid="stSidebar"] div[class*="st-key-sb_nav_"] [data-testid="stBaseButton-secondary"] p {{
+            color: {_sb_btn_text} !important;
+            font-size: 0.90rem !important;
+            font-weight: 500 !important;
+            margin: 0 !important;
+        }}
+
+        [data-testid="stSidebar"] div[class*="st-key-sb_nav_"] [data-testid="stBaseButton-secondary"]:hover {{
+            background-color: {_sb_btn_hover_bg} !important;
+            color: {_sb_btn_hover_text} !important;
+            border-color: {_sb_btn_hover_border} !important;
+            transform: translateX(2px) !important;
+        }}
+
+        [data-testid="stSidebar"] div[class*="st-key-sb_nav_"] [data-testid="stBaseButton-secondary"]:hover p {{
+            color: {_sb_btn_hover_text} !important;
+        }}
+
+        /* Active Navigation Item (Rounded soft-green highlight with glow) */
+        [data-testid="stSidebar"] div[class*="st-key-sb_nav_"] [data-testid="stBaseButton-primary"] {{
+            background: {_sb_active_bg} !important;
+            color: {_sb_active_text} !important;
+            border: 1.5px solid {_sb_active_border} !important;
+            border-radius: 9px !important;
+            font-weight: 600 !important;
+            box-shadow: {_sb_active_glow} !important;
+        }}
+
+        [data-testid="stSidebar"] div[class*="st-key-sb_nav_"] [data-testid="stBaseButton-primary"] p {{
+            color: {_sb_active_text} !important;
+            font-weight: 600 !important;
+            font-size: 0.90rem !important;
+            margin: 0 !important;
+        }}
+
+        [data-testid="stSidebar"] div[class*="st-key-sb_nav_"] [data-testid="stBaseButton-primary"]:hover {{
+            border-color: {_sb_active_border} !important;
+        }}
+
+        /* AI Crop Assistant Card in Sidebar (Single clean border, no nesting) */
+        .leafguard-ai-card {{
+            background: {_sb_card_bg} !important;
+            border: 1px solid {_sb_card_border} !important;
+            border-radius: 10px !important;
+            padding: 12px 12px 10px 12px !important;
+            margin-top: 14px !important;
+            margin-bottom: 6px !important;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18) !important;
+        }}
+
+        .leafguard-ai-badge {{
+            display: inline-block;
+            font-size: 0.68rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #22c55e;
+            background: rgba(34, 197, 94, 0.12);
+            border: 1px solid rgba(34, 197, 94, 0.25);
+            padding: 2px 7px;
+            border-radius: 999px;
+            margin-bottom: 6px;
+        }}
+
+        .leafguard-ai-card-title {{
+            font-size: 0.92rem;
+            font-weight: 700;
+            color: {_sb_card_title} !important;
+            margin-bottom: 3px;
+        }}
+
+        .leafguard-ai-card-desc {{
+            font-size: 0.78rem;
+            color: {_sb_card_desc} !important;
+            line-height: 1.35;
+            margin: 0 !important;
+        }}
+
+        /* Ask Assistant Button directly below the card */
+        [data-testid="stSidebar"] div[class*="st-key-sb_btn_ask_assistant"] {{
+            margin-top: 0 !important;
+            margin-bottom: 10px !important;
+        }}
+
+        [data-testid="stSidebar"] div[class*="st-key-sb_btn_ask_assistant"] button {{
+            background: linear-gradient(135deg, #16a34a 0%, #15803d 100%) !important;
+            border: 1px solid #22c55e !important;
+            color: #ffffff !important;
+            font-weight: 600 !important;
+            border-radius: 8px !important;
+            padding: 7px 12px !important;
+            box-shadow: 0 3px 10px rgba(22, 163, 74, 0.28) !important;
+            transition: all 0.2s ease !important;
+            width: 100% !important;
+        }}
+
+        [data-testid="stSidebar"] div[class*="st-key-sb_btn_ask_assistant"] button p {{
+            color: #ffffff !important;
+            font-weight: 600 !important;
+            font-size: 0.86rem !important;
+            margin: 0 !important;
+        }}
+
+        [data-testid="stSidebar"] div[class*="st-key-sb_btn_ask_assistant"] button:hover {{
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%) !important;
+            border-color: #4ade80 !important;
+            box-shadow: 0 5px 14px rgba(34, 197, 94, 0.38) !important;
+            transform: translateY(-1px) !important;
+        }}
+
+        /* Auth elements inside sidebar */
+        [data-testid="stSidebar"] [data-testid="stAlert"] {{
+            background-color: {_sb_alert_bg} !important;
+            border: 1px solid {_sb_alert_border} !important;
+            border-radius: 9px !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stAlert"] p {{
+            color: {_sb_text} !important;
+            font-size: 0.82rem !important;
+        }}
+        [data-testid="stSidebar"] div[class*="st-key-lg_"] button {{
+            background: {_sb_btn_bg} !important;
+            border: 1px solid {_sb_btn_border} !important;
+            color: {_sb_btn_text} !important;
+            border-radius: 8px !important;
+            font-size: 0.84rem !important;
+            padding: 6px 10px !important;
+        }}
+        [data-testid="stSidebar"] div[class*="st-key-lg_"] button p {{
+            color: {_sb_btn_text} !important;
+            font-size: 0.84rem !important;
+        }}
+
+        /* Expander inside sidebar */
+        [data-testid="stSidebar"] [data-testid="stExpander"] {{
+            background: {_sb_btn_bg} !important;
+            border: 1px solid {_sb_border} !important;
+            border-radius: 9px !important;
+            margin-top: 8px !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpander"] summary span {{
+            color: {_sb_text} !important;
+            font-size: 0.84rem !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stExpander"] svg {{
+            color: {_sb_muted} !important;
         }}
 
         .stApp p,
@@ -1566,27 +1904,100 @@ def generate_gradcam_explanation(
 
 with st.sidebar:
 
-    st.markdown(f"## 🌱 {current_app_name()}")
-    st.caption(t("smart_crop"))
+    # 1. BRAND HEADER (Leaf Logo & LeafGuard AI Title)
+    st.markdown(
+        f"""
+        <div style="display: flex; align-items: center; gap: 10px; padding: 4px 2px 8px 2px;">
+            <svg viewBox="0 0 64 64" width="36" height="36" aria-label="LeafGuard leaf logo" style="flex-shrink: 0;">
+                <path d="M53 9C31 9 13 18 12 36c0 10 7 17 17 16C47 50 54 30 53 9Z" fill="#22c55e"/>
+                <path d="M13 56C23 43 32 33 46 21" fill="none" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"/>
+            </svg>
+            <div>
+                <div class="leafguard-sb-title">LeafGuard AI</div>
+                <div class="leafguard-sb-sub">{t("smart_crop")}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.divider()
-    st.markdown(t("supported_crops"))
-    st.markdown(t("supported_crops_body"))
+
+    # 2. NAVIGATION SECTION
+    st.markdown(
+        f"""
+        <div class="leafguard-sb-nav-heading">
+            {t("nav_heading")}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    nav_items = [
+        ("Home", "home", "🏠", t("home")),
+        ("Scan Crops", "scan_crops", "🔬", t("card_scan_title")),
+        ("Crop & Disease Library", "library", "📚", t("card_library_title")),
+        ("Weather & Crop Care", "weather", "🌦️", t("card_weather_title")),
+    ]
+
+    current_page = st.session_state.get("app_page", "Home")
+
+    for page_target, slug, icon, label in nav_items:
+        is_active = (current_page == page_target)
+        btn_type = "primary" if is_active else "secondary"
+        if st.button(
+            f"{icon}  {label}",
+            key=f"sb_nav_{slug}",
+            type=btn_type,
+            use_container_width=True,
+        ):
+            if current_page != page_target:
+                st.session_state.app_page = page_target
+                if page_target == "Scan Crops":
+                    st.session_state.analysis_stage = 1
+                    st.session_state.analysis_mode = "single"
+                st.rerun()
+            elif page_target == "Scan Crops" and st.session_state.get("analysis_stage") != 1:
+                st.session_state.analysis_stage = 1
+                st.session_state.analysis_mode = "single"
+                st.rerun()
+
+    # 3. AI CROP ASSISTANT CARD
+    st.markdown(
+        f"""
+        <div class="leafguard-ai-card">
+            <div class="leafguard-ai-badge">🌿✨ {t("ai_assistant_badge")}</div>
+            <div class="leafguard-ai-card-title">{t("ai_assistant_card_title")}</div>
+            <div class="leafguard-ai-card-desc">{t("ai_assistant_card_desc")}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if st.button(
+        "💬  " + t("ai_assistant_card_btn"),
+        key="sb_btn_ask_assistant",
+        use_container_width=True,
+    ):
+        st.session_state.chat_open = True
+        st.rerun()
 
     st.divider()
-    st.markdown(t("how_it_works"))
-    st.markdown(t("how_it_works_body"))
 
-    st.divider()
-    st.markdown(t("features"))
-    st.markdown(t("features_body"))
-
-    st.divider()
-    st.markdown(t("safety"))
-    st.caption(t("safety_caption"))
-
-    st.divider()
-    st.caption(t("features_note"))
+    # 4. ABOUT / KNOWLEDGE EXPANDER
+    with st.expander("ℹ️  " + t("about_leafguard")):
+        st.markdown(t("supported_crops"))
+        st.markdown(t("supported_crops_body"))
+        st.divider()
+        st.markdown(t("how_it_works"))
+        st.markdown(t("how_it_works_body"))
+        st.divider()
+        st.markdown(t("features"))
+        st.markdown(t("features_body"))
+        st.divider()
+        st.markdown(t("safety"))
+        st.caption(t("safety_caption"))
+        st.caption(t("features_note"))
 
 
 # ============================================================
