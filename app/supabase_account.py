@@ -1,4 +1,4 @@
-﻿"""Supabase authentication and per-user persistence helpers for LeafGuard AI.
+"""Supabase authentication and per-user persistence helpers for LeafGuard AI.
 Requires: streamlit, supabase
 Configure .streamlit/secrets.toml with [supabase] url, anon_key, storage_bucket.
 """
@@ -41,8 +41,41 @@ def render_auth_gate() -> None:
         return
 
     if st.session_state.get("lg_demo_mode"):
-        st.sidebar.info("Demo mode: private account features are unavailable.")
+        st.sidebar.markdown("""
+        <div style="
+            background: linear-gradient(145deg, #142923, #101c20);
+            border: 1px solid #285542;
+            border-radius: 14px;
+            padding: 15px 13px;
+            margin: 4px 0 12px 0;
+        ">
+            <div style="display:flex;align-items:center;gap:10px;">
+                <div style="
+                    background:#214b37;
+                    border-radius:10px;
+                    width:38px;
+                    height:38px;
+                    display:flex;
+                    align-items:center;
+                    justify-content:center;
+                    font-size:20px;
+                ">🌿</div>
+                <div>
+                    <div style="color:#f0f7f2;font-weight:700;font-size:15px;">
+                        Your LeafGuard Account
+                    </div>
+                    <div style="color:#8fbea4;font-size:11px;margin-top:3px;">
+                        SIGN IN TO GET STARTED
+                    </div>
+                </div>
+            </div>
+            <div style="color:#c0d0c7;font-size:12px;line-height:1.5;margin-top:10px;">
+                Sign in to save your scans and access your personal reports.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         if st.sidebar.button("Sign in / Create account", key="lg_open_auth"):
+            st.session_state["lg_demo_mode"] = False
             st.session_state["lg_auth_open"] = True
             st.rerun()
         return
