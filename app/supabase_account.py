@@ -26,40 +26,46 @@ def is_authenticated() -> bool:
     return current_user() is not None
 
 
-def render_auth_gate() -> None:
-    """Show a login dialog over the public Home page."""
+def render_auth_gate(in_sidebar: bool = False) -> None:
+    """Show account controls and the login dialog."""
+    ui = st if in_sidebar else st.sidebar
+
     if is_authenticated():
-        with st.sidebar:
-            st.caption(f"Signed in: {(current_user() or {}).get('email', 'user')}")
-            if st.button("Log out", key="lg_logout"):
+        with ui.container(key="lg_account_card"):
+            ui.markdown("""
+            <div style="display:flex;align-items:center;gap:10px;">
+                <div style="background:#214b37;border-radius:10px;width:38px;
+                            height:38px;display:flex;align-items:center;
+                            justify-content:center;font-size:20px;">&#127807;</div>
+                <div>
+                    <div style="color:#f0f7f2;font-weight:700;font-size:15px;">
+                        Your LeafGuard Account
+                    </div>
+                    <div style="color:#8fbea4;font-size:11px;margin-top:3px;">
+                        ACCOUNT ACTIVE
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            ui.caption(f"Signed in: {(current_user() or {}).get('email', 'user')}")
+            if ui.button("Log out", key="lg_logout", use_container_width=True):
                 try:
                     get_supabase().auth.sign_out()
                 finally:
                     for k in ("lg_user", "lg_access_token", "lg_refresh_token"):
                         st.session_state.pop(k, None)
+                    st.session_state["lg_demo_mode"] = True
+                    st.session_state["lg_auth_open"] = False
                 st.rerun()
         return
 
     if st.session_state.get("lg_demo_mode"):
-        st.sidebar.markdown("""
-        <div style="
-            background: linear-gradient(145deg, #142923, #101c20);
-            border: 1px solid #285542;
-            border-radius: 14px;
-            padding: 15px 13px;
-            margin: 4px 0 12px 0;
-        ">
+        with ui.container(key="lg_account_card"):
+            ui.markdown("""
             <div style="display:flex;align-items:center;gap:10px;">
-                <div style="
-                    background:#214b37;
-                    border-radius:10px;
-                    width:38px;
-                    height:38px;
-                    display:flex;
-                    align-items:center;
-                    justify-content:center;
-                    font-size:20px;
-                ">🌿</div>
+                <div style="background:#214b37;border-radius:10px;width:38px;
+                            height:38px;display:flex;align-items:center;
+                            justify-content:center;font-size:20px;">&#127807;</div>
                 <div>
                     <div style="color:#f0f7f2;font-weight:700;font-size:15px;">
                         Your LeafGuard Account
@@ -72,19 +78,17 @@ def render_auth_gate() -> None:
             <div style="color:#c0d0c7;font-size:12px;line-height:1.5;margin-top:10px;">
                 Sign in to save your scans and access your personal reports.
             </div>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.sidebar.button("Sign in / Create account", key="lg_open_auth"):
-            st.session_state["lg_demo_mode"] = False
-            st.session_state["lg_auth_open"] = True
-            st.rerun()
+            """, unsafe_allow_html=True)
+            if ui.button("Sign in / Create account", key="lg_open_auth", use_container_width=True):
+                st.session_state["lg_demo_mode"] = False
+                st.session_state["lg_auth_open"] = True
+                st.rerun()
         return
-
     if "lg_auth_open" not in st.session_state:
         st.session_state["lg_auth_open"] = True
 
     if not st.session_state["lg_auth_open"]:
-        if st.sidebar.button("Sign in / Create account", key="lg_reopen_auth"):
+        if ui.button("Sign in / Create account", key="lg_reopen_auth"):
             st.session_state["lg_auth_open"] = True
             st.rerun()
         return
@@ -196,7 +200,3 @@ def download_my_pdf(object_path: str) -> bytes:
         raise PermissionError("You can only download your own reports.")
     bucket = str(st.secrets.get("supabase", {}).get("storage_bucket", "leafguard-reports"))
     return _authed_client().storage.from_(bucket).download(object_path)
-
-
-
-
